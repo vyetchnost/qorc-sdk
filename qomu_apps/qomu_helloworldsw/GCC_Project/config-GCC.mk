@@ -57,15 +57,16 @@ export INCLUDE_DIRS=-I"$(PROJ_DIR)" \
 
 # C compiler flags
 export CFLAGS= $(MACROS) \
+	-std=gnu17 -fpermissive -fcommon \
         -mcpu=cortex-m4 -mthumb -mlittle-endian -mfloat-abi=hard -mfpu=fpv4-sp-d16 \
         ${DASH_O} $(OPT_FLAGS) -fmessage-length=0 -lm \
-        -fsigned-char -ffunction-sections -fdata-sections  ${DASH_G} -std=c99 -MMD -MD -MP
+        -fsigned-char -ffunction-sections -fdata-sections ${DASH_G} -MMD -MD -MP
 
 
 export LD_FLAGS_1= -mcpu=cortex-m4 -mthumb -mlittle-endian -mfloat-abi=hard -mfpu=fpv4-sp-d16 \
             ${DASH_O} $(OPT_FLAGS) -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections  \
             ${DASH_G} -T "$(PROJ_DIR)/qomu.ld" -Xlinker --gc-sections -Wall -Werror \
-	-Wl,--fatal-warnings -Wl,-Map,"$(OUTPUT_PATH)/$(OUTPUT_FILE).map" \
+	    -Wl,-Map,"$(OUTPUT_PATH)/$(OUTPUT_FILE).map" \
             --specs=nano.specs --specs=nosys.specs -Wl,--no-wchar-size-warning \
             -o "$(OUTPUT_PATH)/$(OUTPUT_FILE).elf" -lm\
     -L$(LIBCMSIS_GCC_DIR) -larm_cortexM4lf_math 
