@@ -1,0 +1,407 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Qomu App Anatomy</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: single reading column; diagrams break out to a wider track and scroll sideways on phones. */
+:root {
+  --bg: #f4f6f4;
+  --surface: #ffffff;
+  --fg: #18211d;
+  --muted: #5a6761;
+  --line: #d3dad6;
+  --accent: #0f6e5a;     /* M4 / firmware: soldermask green */
+  --fabric: #a8620a;     /* eFPGA */
+  --host: #3a5aa0;       /* USB host */
+  --danger: #b3362d;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111715; --surface: #18201d; --fg: #e2eae6; --muted: #93a29b; --line: #2b3632;
+    --accent: #45c2a0; --fabric: #e2a447; --host: #8ea8ea; --danger: #ec7a70;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111715; --surface: #18201d; --fg: #e2eae6; --muted: #93a29b; --line: #2b3632;
+  --accent: #45c2a0; --fabric: #e2a447; --host: #8ea8ea; --danger: #ec7a70;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15.5px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 64px;
+}
+.wrap { max-width: 900px; margin: 0 auto; display: grid; gap: 56px; }
+.prose { max-width: 66ch; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 2.8rem); font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 1.55rem; font-weight: 600; }
+h3 { font-size: 1.1rem; font-weight: 600; }
+p { margin: 0; }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+code { background: color-mix(in srgb, var(--accent) 9%, transparent); padding: 0.05em 0.35em; border-radius: 3px; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.muted { color: var(--muted); }
+section { display: grid; gap: 18px; }
+.head { display: grid; gap: 8px; }
+
+/* Hero */
+header { display: grid; gap: 14px; }
+header .lede { font-size: 1.1rem; max-width: 62ch; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin-top: 8px; }
+.fact { background: var(--surface); padding: 14px 16px; display: grid; gap: 4px; align-content: start; min-width: 0; }
+.fact b { font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; }
+.fact span { font-size: 0.88rem; color: var(--muted); line-height: 1.45; }
+
+/* Diagram frames */
+.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 18px; }
+.figure svg { display: block; width: 100%; min-width: 640px; height: auto; }
+.cap { font-size: 0.86rem; color: var(--muted); }
+
+/* SVG styling */
+.box { fill: var(--surface); stroke: var(--line); stroke-width: 1.25; }
+.box.fw { stroke: var(--accent); }
+.box.rom { stroke-dasharray: 4 3; stroke: var(--muted); }
+.box.err { stroke: var(--danger); }
+.box.app { fill: color-mix(in srgb, var(--accent) 13%, var(--surface)); stroke: var(--accent); stroke-width: 1.75; }
+.dia { fill: var(--surface); stroke: var(--fg); stroke-width: 1.25; }
+.wire { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.head-mk { fill: var(--muted); }
+.t-title { font-family: var(--font-display); font-weight: 600; font-size: 14.5px; fill: var(--fg); }
+.t-sub { font-family: var(--font-body); font-size: 11.5px; fill: var(--muted); }
+.t-code { font-family: var(--font-mono); font-size: 11px; fill: var(--fg); }
+.t-tag { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+.t-lbl { font-family: var(--font-mono); font-size: 11px; fill: var(--fg); }
+.t-err { fill: var(--danger); }
+.t-fab { fill: var(--fabric); }
+
+/* Flash strip */
+.strip { display: flex; min-width: 640px; height: 64px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg { position: relative; display: flex; flex-direction: column; justify-content: center; padding: 0 6px; border-right: 1px solid var(--bg); font-size: 11px; line-height: 1.25; min-width: 0; overflow: hidden; white-space: nowrap; }
+.seg:last-child { border-right: 0; }
+.seg b { font-family: var(--font-display); font-size: 12.5px; font-weight: 600; }
+.seg span { font-family: var(--font-mono); font-size: 10px; opacity: 0.85; }
+.seg.fw  { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
+.seg.fwa { background: var(--accent); color: var(--surface); }
+.seg.fab { background: color-mix(in srgb, var(--fabric) 24%, var(--surface)); }
+.seg.meta { background: color-mix(in srgb, var(--muted) 18%, var(--surface)); }
+.seg.free { background: repeating-linear-gradient(135deg, var(--surface) 0 5px, color-mix(in srgb, var(--muted) 12%, var(--surface)) 5px 10px); color: var(--muted); }
+.ticks { display: flex; min-width: 640px; justify-content: space-between; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+
+/* Tables */
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+td.addr { font-family: var(--font-mono); font-size: 0.82rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+tr.you td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tbl { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; }
+.tbl table { min-width: 560px; }
+.tbl tr:last-child td { border-bottom: 0; }
+
+/* Status chips */
+.chip { display: inline-block; font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.04em; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.chip.req { color: var(--accent); }
+.chip.you { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.chip.opt { color: var(--muted); }
+.chip.dead { color: var(--danger); }
+.chip.m4 { color: var(--accent); }
+.chip.fpga { color: var(--fabric); }
+.chip.host { color: var(--host); }
+
+/* Stack */
+.stack { list-style: none; margin: 0; padding: 0; display: grid; position: relative; }
+.stack li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 12px 0; position: relative; }
+.stack li::before { content: ""; position: absolute; left: 10px; top: 0; bottom: 0; width: 2px; background: var(--line); }
+.stack li:first-child::before { top: 22px; }
+.stack li:last-child::before { bottom: calc(100% - 22px); }
+.dot { width: 12px; height: 12px; border-radius: 50%; margin: 6px 0 0 5px; position: relative; z-index: 1; border: 2px solid var(--bg); box-sizing: content-box; }
+.dot.m4 { background: var(--accent); } .dot.fpga { background: var(--fabric); } .dot.host { background: var(--host); }
+.stack .what { display: grid; gap: 2px; min-width: 0; }
+.stack .what b { font-family: var(--font-display); font-weight: 600; font-size: 1.02rem; }
+.stack .what .mono { color: var(--muted); overflow-wrap: anywhere; }
+.boundary { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 4px 0 4px 36px; border-top: 1px dashed var(--line); }
+
+/* Two-col cards */
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.card ul { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; font-size: 0.92rem; }
+
+/* Gotchas */
+.gotchas { display: grid; gap: 0; border-top: 1px solid var(--line); }
+.gotcha { display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); gap: 8px 24px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.gotcha h3 { font-size: 1.02rem; }
+@media (max-width: 640px) { .gotcha { grid-template-columns: 1fr; } }
+
+footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">qorc-sdk · Qomu · EOS S3</div>
+  <h1>Qomu App Anatomy</h1>
+  <p class="lede">What actually runs on a Qomu, in what order, and which parts of the SDK each piece comes from. The worked example is <code>qomu_apps/qomu_helloworldsw</code>.</p>
+  <div class="facts">
+    <div class="fact"><b>It's a FreeRTOS image</b><span>Your code is a CLI task. <code>main()</code> does bring-up, then starts the scheduler, which never returns.</span></div>
+    <div class="fact"><b>USB lives in the FPGA</b><span>The S3 has no USB controller. The app loads a USB-serial core into the eFPGA to get a console.</span></div>
+    <div class="fact"><b>It runs from SRAM</b><span>There's no internal flash. The bootloader copies your image from SPI flash to SRAM at <code>0x0</code>.</span></div>
+    <div class="fact"><b>Bootloader runs first, never linked</b><span>It sits at SPI offset 0 and either reflashes the board or hands off to your image.</span></div>
+  </div>
+</header>
+
+<!-- 1. Boot flow -->
+<section>
+  <div class="head">
+    <div class="eyebrow">From reset to your code</div>
+    <h2>Boot flow</h2>
+  </div>
+  <div class="figure scroll">
+    <svg viewBox="0 0 720 652" role="img" aria-label="Boot flow from reset through the boot ROM and bootloader to the application">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path class="head-mk" d="M0,0 L10,5 L0,10 z"/>
+        </marker>
+      </defs>
+
+      <!-- Reset -->
+      <rect class="box" x="280" y="8" width="160" height="32" rx="16"/>
+      <text class="t-title" x="360" y="29" text-anchor="middle">Reset / power-on</text>
+      <line class="wire" x1="360" y1="40" x2="360" y2="68" marker-end="url(#ah)"/>
+
+      <!-- ROM -->
+      <rect class="box rom" x="190" y="70" width="340" height="54" rx="6"/>
+      <text class="t-title" x="360" y="92" text-anchor="middle">EOS S3 boot ROM</text>
+      <text class="t-sub" x="360" y="111" text-anchor="middle">copies SPI 0x000000 → SRAM, starts the M4</text>
+      <text class="t-tag" x="546" y="101">in silicon</text>
+      <line class="wire" x1="360" y1="124" x2="360" y2="150" marker-end="url(#ah)"/>
+
+      <!-- Bootloader -->
+      <rect class="box fw" x="190" y="152" width="340" height="54" rx="6"/>
+      <text class="t-title" x="360" y="174" text-anchor="middle">qomu_bootloader</text>
+      <text class="t-sub" x="360" y="193" text-anchor="middle">loads bootfpga (USB-serial) into eFPGA · waits ≤ 5 s</text>
+      <text class="t-tag" x="546" y="183">SPI 0x000000</text>
+      <line class="wire" x1="360" y1="206" x2="360" y2="228" marker-end="url(#ah)"/>
+
+      <!-- Decision -->
+      <polygon class="dia" points="360,230 462,264 360,298 258,264"/>
+      <text class="t-title" x="360" y="269" text-anchor="middle">User button?</text>
+
+      <line class="wire" x1="462" y1="264" x2="556" y2="264" marker-end="url(#ah)"/>
+      <text class="t-lbl" x="508" y="256" text-anchor="middle">yes</text>
+      <rect class="box" x="558" y="230" width="154" height="68" rx="6"/>
+      <text class="t-title" x="635" y="253" text-anchor="middle">Download mode</text>
+      <text class="t-sub" x="635" y="271" text-anchor="middle">programmer writes</text>
+      <text class="t-sub" x="635" y="286" text-anchor="middle">flash regions</text>
+
+      <line class="wire" x1="360" y1="298" x2="360" y2="324" marker-end="url(#ah)"/>
+      <text class="t-lbl" x="370" y="315">no</text>
+
+      <!-- Metadata -->
+      <rect class="box fw" x="190" y="326" width="340" height="50" rx="6"/>
+      <text class="t-title" x="360" y="346" text-anchor="middle">Read META sectors</text>
+      <text class="t-sub" x="360" y="364" text-anchor="middle">size · CRC · "is flashed" flag per region</text>
+
+      <line class="wire" x1="190" y1="351" x2="164" y2="351" marker-end="url(#ah)"/>
+      <rect class="box err" x="8" y="322" width="154" height="58" rx="6"/>
+      <text class="t-title t-err" x="85" y="345" text-anchor="middle">No valid image</text>
+      <text class="t-sub" x="85" y="364" text-anchor="middle">red LED · waits</text>
+
+      <line class="wire" x1="360" y1="376" x2="360" y2="402" marker-end="url(#ah)"/>
+
+      <!-- appfpga -->
+      <rect class="box fw" x="190" y="404" width="340" height="50" rx="6"/>
+      <text class="t-title" x="360" y="424" text-anchor="middle">load_appfpga()</text>
+      <text class="t-sub" x="360" y="442" text-anchor="middle">only if an appfpga image is flashed (helloworldsw: no)</text>
+      <text class="t-tag" x="546" y="433">SPI 0x040000</text>
+      <line class="wire" x1="360" y1="454" x2="360" y2="480" marker-end="url(#ah)"/>
+
+      <!-- m4app -->
+      <rect class="box fw" x="190" y="482" width="340" height="50" rx="6"/>
+      <text class="t-title" x="360" y="502" text-anchor="middle">load_m4app()</text>
+      <text class="t-sub" x="360" y="520" text-anchor="middle">copy image to SRAM 0x0, jump to it</text>
+      <text class="t-tag" x="546" y="511">SPI 0x080000</text>
+      <line class="wire" x1="360" y1="532" x2="360" y2="558" marker-end="url(#ah)"/>
+
+      <!-- App -->
+      <rect class="box app" x="190" y="560" width="340" height="86" rx="6"/>
+      <text class="t-title" x="360" y="582" text-anchor="middle">Your app · main()</text>
+      <text class="t-code" x="360" y="602" text-anchor="middle">qomu_hardwaresetup() · clock tweaks</text>
+      <text class="t-code" x="360" y="618" text-anchor="middle">load_fpga(USB-serial) · HAL_usbserial_init2()</text>
+      <text class="t-code" x="360" y="634" text-anchor="middle">CLI_start_task() · vTaskStartScheduler()</text>
+      <text class="t-tag t-fab" x="546" y="604">eFPGA is reset and</text>
+      <text class="t-tag t-fab" x="546" y="619">reloaded by the app</text>
+    </svg>
+  </div>
+  <p class="cap">The bootloader is a FreeRTOS app built the same way as yours. It loads the USB-serial gateware so it can talk to the programmer. Your app then has to load its own copy, because nothing in the fabric survives the handoff.</p>
+</section>
+
+<!-- 2. Flash map -->
+<section>
+  <div class="head">
+    <div class="eyebrow">External SPI flash · first 1 MB, to scale</div>
+    <h2>Flash map</h2>
+  </div>
+  <p class="prose">The flash has no filesystem. It's a set of fixed regions defined in <code>BSP/qomu/inc/flash_defines.h</code>. Each image has a 4 KB metadata sector that the bootloader checks before loading it.</p>
+  <div class="figure">
+    <div class="scroll">
+      <div class="strip" role="img" aria-label="Flash regions from 0x000000 to 0x100000">
+        <div class="seg fw"   style="width:6.25%"><b>boot</b><span>64K</span></div>
+        <div class="seg meta" style="width:6.25%"><b>meta</b><span>64K</span></div>
+        <div class="seg fab"  style="width:12.5%"><b>bootfpga</b><span>128K</span></div>
+        <div class="seg fab"  style="width:12.5%"><b>appfpga</b><span>128K</span></div>
+        <div class="seg free" style="width:12.5%"><b>appffe</b><span>128K · unused</span></div>
+        <div class="seg fwa"  style="width:42.97%"><b>m4app · your .bin</b><span>440K</span></div>
+        <div class="seg free" style="width:7.03%"><b>spare</b><span>72K</span></div>
+      </div>
+      <div class="ticks"><span>0x000000</span><span>0x040000</span><span>0x080000</span><span>0x0C0000</span><span>0x100000</span></div>
+    </div>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Offset</th><th>Size</th><th>Region</th><th>Contents</th></tr></thead>
+      <tbody>
+        <tr><td class="addr">0x000000</td><td class="addr">64K</td><td>bootloader</td><td>M4 code the boot ROM loads at reset</td></tr>
+        <tr><td class="addr">0x010000</td><td class="addr">4K × 4</td><td>META</td><td>bootfpga, appfpga, appffe and m4app metadata (size, CRC, flags)</td></tr>
+        <tr><td class="addr">0x01F000</td><td class="addr">4K</td><td>META</td><td>bootloader metadata</td></tr>
+        <tr><td class="addr">0x020000</td><td class="addr">128K</td><td>bootfpga</td><td>USB-serial gateware, for the bootloader's use only</td></tr>
+        <tr><td class="addr">0x040000</td><td class="addr">128K</td><td>appfpga</td><td>Optional separate app bitstream, loaded before your app starts</td></tr>
+        <tr><td class="addr">0x060000</td><td class="addr">128K</td><td>appffe</td><td>Reserved for the sensor engine (FFE), unused</td></tr>
+        <tr class="you"><td class="addr">0x080000</td><td class="addr">440K</td><td><b>m4app</b></td><td><b>Your application image</b></td></tr>
+        <tr><td class="addr">0x0EE000</td><td class="addr">72K</td><td>spare</td><td>Partly used as scratch by the bootloader while copying</td></tr>
+        <tr><td class="addr">0x100000</td><td class="addr">1 MB</td><td>spare</td><td>Unused upper half of the 2 MB part</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- 3. Memory at runtime -->
+<section>
+  <div class="head">
+    <div class="eyebrow">GCC_Project/qomu.ld</div>
+    <h2>Memory at runtime</h2>
+  </div>
+  <p class="prose">The linker's <code>rom</code> region starts at address 0, but it's SRAM that the bootloader fills. That puts your hard size limit at about 156 KB of code and read-only data, well under the 440 KB flash slot.</p>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Region</th><th>Origin</th><th>Size</th><th>Holds</th></tr></thead>
+      <tbody>
+        <tr class="you"><td><b>rom</b></td><td class="addr">0x00000000</td><td class="addr">156K</td><td>Vectors, <code>.text</code>, <code>.rodata</code>, the embedded FPGA bitstream. Copied in from SPI 0x080000.</td></tr>
+        <tr><td>ram</td><td class="addr">0x20027000</td><td class="addr">242K</td><td><code>.data</code>, <code>.bss</code>, the 60 KB FreeRTOS heap, the main stack</td></tr>
+        <tr><td>spiram</td><td class="addr">0x20063800</td><td class="addr">2K</td><td>SPI driver buffers</td></tr>
+        <tr><td>HWA</td><td class="addr">0x20064000</td><td class="addr">96K</td><td>Hardware-accelerator (FFE/DMA) area</td></tr>
+        <tr><td>shm</td><td class="addr">0x2007C000</td><td class="addr">16K</td><td>Shared memory</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- 4. Console stack -->
+<section>
+  <div class="head">
+    <div class="eyebrow">How dbg_str("Hello world") reaches your terminal</div>
+    <h2>The console stack</h2>
+  </div>
+  <p class="prose"><code>Fw_global_config.h</code> sets <code>DEBUG_UART</code> to <code>UART_ID_USBSERIAL</code>. The HAL UART layer then works as a switch: it sends "UART" traffic to the FPGA's USB core, not to a physical UART pin.</p>
+  <div class="figure">
+    <ol class="stack">
+      <li><span class="dot m4"></span><div class="what"><b>Your CLI menu</b><span class="mono">src/main_dbg_cli_menu.c · runs as a FreeRTOS task</span></div><span class="chip m4">M4</span></li>
+      <li><span class="dot m4"></span><div class="what"><b>CLI engine</b><span class="mono">Libraries/cli</span></div><span class="chip m4">M4</span></li>
+      <li><span class="dot m4"></span><div class="what"><b>dbg_str() and printf()</b><span class="mono">Libraries/Utils/src/dbg_uart.c · src/c_lib_retarget.c</span></div><span class="chip m4">M4</span></li>
+      <li><span class="dot m4"></span><div class="what"><b>UART dispatch</b><span class="mono">HAL/src/eoss3_hal_uart.c · if uartid == UART_ID_USBSERIAL …</span></div><span class="chip m4">M4</span></li>
+      <li><span class="dot m4"></span><div class="what"><b>USB-serial driver</b><span class="mono">s3-gateware/…/eoss3_hal_fpga_usbserial.c</span></div><span class="chip m4">M4</span></li>
+      <li class="boundary">eFPGA fabric</li>
+      <li><span class="dot fpga"></span><div class="what"><b>USB-serial core</b><span class="mono">fpga/qomu_fpga.c · bitstream array loaded by load_fpga()</span></div><span class="chip fpga">FPGA</span></li>
+      <li class="boundary">USB cable</li>
+      <li><span class="dot host"></span><div class="what"><b>Host serial port</b><span class="mono">/dev/tty.usbmodem* · USB PID 0x6141</span></div><span class="chip host">host</span></li>
+    </ol>
+  </div>
+</section>
+
+<!-- 5. App anatomy -->
+<section>
+  <div class="head">
+    <div class="eyebrow">qomu_apps/qomu_helloworldsw</div>
+    <h2>What's in the app folder</h2>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>File</th><th>Role</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td class="addr">src/main_dbg_cli_menu.c</td><td>CLI commands. Your application logic goes here, or in new tasks.</td><td><span class="chip you">yours</span></td></tr>
+        <tr><td class="addr">src/main.c</td><td>Bring-up: hardware setup, clocks, FPGA load, USB init, banner, CLI task, scheduler. Also the empty <code>SystemInit()</code> stub.</td><td><span class="chip req">required</span></td></tr>
+        <tr><td class="addr">src/pincfg_table.c</td><td>Pad mux table: LED, button, fabric pins. The BSP applies it.</td><td><span class="chip req">required</span></td></tr>
+        <tr><td class="addr">src/s3x_pwrcfg.c</td><td>Clock domains and power islands, including the fabric clocks</td><td><span class="chip req">required</span></td></tr>
+        <tr><td class="addr">src/exceptions.c</td><td>Fault handlers with register dump, UART and timer IRQs, FreeRTOS idle and tick hooks</td><td><span class="chip req">required</span></td></tr>
+        <tr><td class="addr">src/c_lib_retarget.c</td><td>newlib <code>_write</code>/<code>_read</code>, so <code>printf</code> goes to the console</td><td><span class="chip req">required</span></td></tr>
+        <tr><td class="addr">src/sec_debug.c</td><td>Assert capture and soft-fault helpers, used by the fault handlers</td><td><span class="chip req">required</span></td></tr>
+        <tr><td class="addr">fpga/qomu_fpga.c</td><td>USB-serial bitstream as a C array, generated by <code>convert_fbcfg_to_cpuwrites.pl</code></td><td><span class="chip req">required</span></td></tr>
+        <tr><td class="addr">inc/Fw_global_config.h</td><td>Feature flags. Sets <code>DEBUG_UART = UART_ID_USBSERIAL</code>.</td><td><span class="chip req">required</span></td></tr>
+        <tr><td class="addr">inc/FreeRTOSConfig.h</td><td>Kernel config: hooks enabled, 60 KB heap</td><td><span class="chip req">required</span></td></tr>
+        <tr><td class="addr">GCC_Project/qomu.ld</td><td>Linker memory map (see above)</td><td><span class="chip req">required</span></td></tr>
+        <tr><td class="addr">src/watchdog.c</td><td>Compiled, but <code>init_watchdog_reload_task()</code> is never called</td><td><span class="chip opt">optional</span></td></tr>
+        <tr><td class="addr">audio_pipeline_example.c, ql_hostTask.c, h2d_protocol.c, ql_smart_remote_app.c</td><td>Template leftovers, filtered out in <code>Makefile_appdir</code>. Many headers in <code>inc/</code> are leftovers too.</td><td><span class="chip dead">unused</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- 6. Pulled from the SDK -->
+<section>
+  <div class="head">
+    <div class="eyebrow">Compiled from source into the same .bin</div>
+    <h2>What comes from the rest of the SDK</h2>
+  </div>
+  <div class="cols">
+    <div class="card">
+      <h3>Platform</h3>
+      <ul>
+        <li><code>HAL/startup</code>: vector table and C runtime startup, which calls <code>SystemInit()</code> and then <code>main()</code></li>
+        <li><code>HAL/src</code>: UART dispatch, GPIO, clocks, pads</li>
+        <li><code>BSP/qomu/src</code>: <code>qomu_hardwaresetup()</code>, which applies your pwrcfg and pad tables</li>
+        <li><code>FreeRTOS</code>: the kernel and the Cortex-M4F port</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Libraries and gateware</h3>
+      <ul>
+        <li><code>Libraries/cli</code>: the menu engine</li>
+        <li><code>Libraries/Utils</code>: <code>dbg_uart</code>, the console print helpers</li>
+        <li><code>Libraries/FPGA</code>: <code>load_fpga()</code></li>
+        <li><code>Libraries/Power</code>: the <code>S3x_Clk_*</code> and power-island framework</li>
+        <li><code>s3-gateware</code>: the M4-side USB-serial driver</li>
+      </ul>
+    </div>
+  </div>
+  <p class="cap">The bootloader has its own near-copy of <code>qomu_hardwaresetup.c</code>, which also sets up SPI and GPIO interrupts. Your app links the BSP version, not the bootloader's.</p>
+</section>
+
+<!-- 7. Gotchas -->
+<section>
+  <div class="head">
+    <div class="eyebrow">Before you change things</div>
+    <h2>Gotchas</h2>
+  </div>
+  <div class="gotchas">
+    <div class="gotcha"><h3>Keep FPGA, clocks and pins in sync</h3><p>If you swap the bitstream, recheck <code>s3x_pwrcfg.c</code> (fabric clocks) and <code>pincfg_table.c</code> (pads routed to the fabric). If they don't match, USB stops enumerating and you get no error.</p></div>
+    <div class="gotcha"><h3>Breaking USB loses the console</h3><p>Your console depends on the gateware. If <code>load_fpga()</code> or the USB init fails, there's no output at all. Blink an LED early in <code>main()</code>, or keep an SWD probe handy.</p></div>
+    <div class="gotcha"><h3>SRAM is the size limit</h3><p>The image has to fit the ~156 KB <code>rom</code> region, including the embedded bitstream. The 440 KB flash slot doesn't help past that.</p></div>
+    <div class="gotcha"><h3>Recovering a stuck board</h3><p>Press reset, then the user button within 5 s, to enter download mode. If the bootloader itself is damaged, use <code>qomu_loadflash</code> over SWD. Factory images are in <code>qomu_apps/qomu-initial-binaries</code>.</p></div>
+  </div>
+</section>
+
+<footer>Based on a reading of qorc-sdk sources: <code>qomu_apps/qomu_helloworldsw</code>, <code>qomu_apps/qomu_bootloader</code>, <code>BSP/qomu</code>, <code>HAL</code>, <code>Libraries</code>. The boot ROM behaviour comes from EOS S3 documentation, not from SDK source.</footer>
+
+</div>
+
+</body></html>
