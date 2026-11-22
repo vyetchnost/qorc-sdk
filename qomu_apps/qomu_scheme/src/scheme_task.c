@@ -130,26 +130,33 @@ static scm_obj p_gpio_read(scm_obj args)
  * Red (IO24) and green (IO6) share GPIO0; the pad output enables select which
  * one is driven, as in the helloworld diag commands. Blue is GPIO3.
  */
+enum { LED_RED, LED_GREEN, LED_BLUE };
+
+static void board_led(int which, int on)
+{
+    volatile uint32_t *pad6 = (volatile uint32_t *)0x40004c18;
+    volatile uint32_t *pad24 = (volatile uint32_t *)0x40004c60;
+    if (which == LED_RED) {
+        *pad6 |= 0x20;              /* IO6 output off */
+        *pad24 &= ~0x20u;           /* IO24 output on */
+        HAL_GPIO_Write(0, (uint8_t)on);
+    } else if (which == LED_GREEN) {
+        *pad24 |= 0x20;
+        *pad6 &= ~0x20u;
+        HAL_GPIO_Write(0, (uint8_t)on);
+    } else {
+        HAL_GPIO_Write(3, (uint8_t)on);
+    }
+}
+
 static scm_obj p_led(scm_obj args)
 {
     const char *name = scm_to_cstr(scm_arg(&args));
     int on = scm_is_true(scm_arg(&args));
-    volatile uint32_t *pad6 = (volatile uint32_t *)0x40004c18;
-    volatile uint32_t *pad24 = (volatile uint32_t *)0x40004c60;
-
-    if (!strcmp(name, "red")) {
-        *pad6 |= 0x20;              /* IO6 output off */
-        *pad24 &= ~0x20u;           /* IO24 output on */
-        HAL_GPIO_Write(0, (uint8_t)on);
-    } else if (!strcmp(name, "green")) {
-        *pad24 |= 0x20;
-        *pad6 &= ~0x20u;
-        HAL_GPIO_Write(0, (uint8_t)on);
-    } else if (!strcmp(name, "blue")) {
-        HAL_GPIO_Write(3, (uint8_t)on);
-    } else {
-        scm_error("led: expected red, green or blue", NULL);
-    }
+    if (!strcmp(name, "red")) board_led(LED_RED, on);
+    else if (!strcmp(name, "green")) board_led(LED_GREEN, on);
+    else if (!strcmp(name, "blue")) board_led(LED_BLUE, on);
+    else scm_error("led: expected red, green or blue", NULL);
     return SCM_UNSPEC;
 }
 
@@ -186,6 +193,9 @@ static void scheme_task(void *arg)
     static const scm_io io = { q_putc, q_getc, q_avail, 1 };
     (void)arg;
 
+    /* Boot checkpoints (temporary): blue = in scm_init, green = printing banner,
+     * all off = waiting for console input. */
+    board_led(LED_BLUE, 1);
     scm_init(scheme_heap, sizeof scheme_heap, &io);
     scm_set_stack_limit(SCHEME_STACK_BYTES - 3 * 1024);
 
@@ -203,10 +213,13 @@ static void scheme_task(void *arg)
     scm_defprim("stack-free", p_stack_free, 0, 0);
 #endif
     scm_eval_cstr(board_prelude);
+    board_led(LED_BLUE, 0);
+    board_led(LED_GREEN, 1);
 
     scm_puts("\nQomu Scheme - ");
     scm_display(scm_from_int((int64_t)scm_free_cells()));
     scm_puts(" cells free. Type (help) for board commands.\n");
+    board_led(LED_GREEN, 0);
 
     for (;;)
         scm_repl();         /* only returns on EOF, which the tty never sends */
@@ -214,6 +227,7 @@ static void scheme_task(void *arg)
 
 void scheme_start_task(void)
 {
-    xTaskCreate(scheme_task, "Scheme", SCHEME_STACK_BYTES / sizeof(StackType_t),
-                NULL, (UBaseType_t)PRIORITY_NORMAL, NULL);
+    if (xTaskCreate(scheme_task, "Scheme", SCHEME_STACK_BYTES / sizeof(StackType_t),
+                    NULL, (UBaseType_t)PRIORITY_NORMAL, NULL) != pdPASS)
+        board_led(LED_RED, 1);      /* not enough FreeRTOS heap for the task stack */
 }
