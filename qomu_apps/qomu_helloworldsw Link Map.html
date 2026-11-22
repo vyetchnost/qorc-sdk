@@ -1,0 +1,535 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>qomu_helloworldsw Link Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one technical column; module graph → call tree → symbol table → build/link → findings. Module hues are the only color. */
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --fg:#1b1f27; --muted:#5d6675; --line:#d9dde4; --edge:#8a93a3; --invert:#c2255c; --focus:#1c7ed6;
+  --m-app:#d9480f; --m-bsp:#9c36b5; --m-hal:#1971c2; --m-power:#5c940d; --m-utils:#0c8599;
+  --m-cli:#e67700; --m-fpga:#c2255c; --m-gw:#5f3dc4; --m-rtos:#087f5b; --m-cmsis:#5c6370; --m-boot:#495057;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12151b; --surface:#1a1e26; --fg:#e4e7ec; --muted:#9aa3b2; --line:#2c323d; --edge:#6c7585; --invert:#f06595; --focus:#4dabf7;
+  --m-app:#ff8a4c; --m-bsp:#d07ee6; --m-hal:#5aa9f0; --m-power:#94d82d; --m-utils:#3bc9db;
+  --m-cli:#ffc046; --m-fpga:#f783ac; --m-gw:#9775fa; --m-rtos:#38d9a9; --m-cmsis:#a8b0bd; --m-boot:#adb5bd; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12151b; --surface:#1a1e26; --fg:#e4e7ec; --muted:#9aa3b2; --line:#2c323d; --edge:#6c7585; --invert:#f06595; --focus:#4dabf7;
+  --m-app:#ff8a4c; --m-bsp:#d07ee6; --m-hal:#5aa9f0; --m-power:#94d82d; --m-utils:#3bc9db;
+  --m-cli:#ffc046; --m-fpga:#f783ac; --m-gw:#9775fa; --m-rtos:#38d9a9; --m-cmsis:#a8b0bd; --m-boot:#adb5bd; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 var(--sans);}
+.wrap{max-width:1080px;margin:0 auto;padding-block:32px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:44px}
+h1,h2,h3{font-weight:600;text-wrap:balance;margin:0}
+h1{font-size:1.9rem;letter-spacing:-.01em}
+h2{font-size:1.25rem;display:flex;gap:.6rem;align-items:baseline}
+h2 .step{font:500 .75rem var(--mono);color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+h3{font-size:1rem}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--mono);font-size:.86em}
+.muted{color:var(--muted)}
+section{display:flex;flex-direction:column;gap:14px}
+header{display:flex;flex-direction:column;gap:10px}
+.crumbs{font:500 .78rem var(--mono);color:var(--muted);letter-spacing:.02em}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.scroll{overflow-x:auto}
+/* legend */
+.legend{display:flex;flex-wrap:wrap;gap:6px}
+.chip{--c:var(--m-cmsis);display:inline-flex;align-items:center;gap:6px;font:500 .78rem var(--mono);padding:3px 9px 3px 7px;border-radius:999px;border:1px solid color-mix(in srgb,var(--c) 45%,var(--line));background:color-mix(in srgb,var(--c) 10%,var(--surface));color:var(--fg);cursor:pointer}
+.chip::before{content:"";width:9px;height:9px;border-radius:2px;background:var(--c)}
+.chip[aria-pressed="true"]{background:color-mix(in srgb,var(--c) 26%,var(--surface));border-color:var(--c)}
+.chip:focus-visible,button:focus-visible,.edge:focus-visible,.mnode:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+/* module graph */
+#mgraph{display:block;width:100%;min-width:760px;height:auto}
+#mgraph text{font-family:var(--mono);fill:var(--fg)}
+.mnode rect{fill:var(--surface);stroke-width:1.5}
+.mnode .sub{fill:var(--muted);font-size:10.5px}
+.mnode{cursor:pointer}
+.mnode.dim{opacity:.28}
+.edge path.vis{fill:none;stroke:var(--edge);stroke-width:1.4}
+.edge.inv path.vis{stroke:var(--invert);stroke-dasharray:5 4}
+.edge.data path.vis{stroke-dasharray:2 3}
+.edge path.hit{fill:none;stroke:transparent;stroke-width:12;cursor:help}
+.edge.dim{opacity:.15}
+.edge.hot path.vis{stroke-width:2.6}
+#mhead{fill:var(--edge)} #mheadinv{fill:var(--invert)}
+.info{padding:10px 14px;border-top:1px solid var(--line);font-size:.88rem;min-height:3.2em;display:flex;flex-direction:column;gap:2px}
+.info b{font-family:var(--mono);font-weight:600}
+.keyline{display:flex;flex-wrap:wrap;gap:18px;font-size:.8rem;color:var(--muted);padding:10px 14px 0}
+.keyline span{display:inline-flex;align-items:center;gap:6px}
+.keyline svg{width:30px;height:8px}
+/* boot strip */
+.boot{display:flex;flex-wrap:wrap;align-items:stretch;gap:0}
+.bstep{display:flex;flex-direction:column;gap:2px;padding:10px 14px;min-width:0;flex:1 1 160px;border-left:1px solid var(--line)}
+.bstep:first-child{border-left:0}
+.bstep .fn{font:600 .9rem var(--mono)}
+.bstep .loc{font:.75rem var(--mono);color:var(--muted);word-break:break-all}
+.bstep .why{font-size:.8rem}
+.bstep .n{font:500 .7rem var(--mono);color:var(--muted);letter-spacing:.05em}
+/* call tree */
+.tree-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+button{font:500 .8rem var(--sans);color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer}
+button:hover{border-color:var(--edge)}
+.tree{font-family:var(--mono);font-size:.84rem;min-width:700px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 300px;align-items:center;gap:12px;padding:3px 14px;border-top:1px solid color-mix(in srgb,var(--line) 55%,transparent)}
+.row:first-child{border-top:0}
+.row.dim{opacity:.3}
+.row.hit{background:color-mix(in srgb,var(--c) 9%,transparent)}
+.fncell{display:flex;align-items:center;min-width:0}
+.guide{display:inline-block;width:20px;flex:none;align-self:stretch;position:relative}
+.guide::before{content:"";position:absolute;left:8px;top:-4px;bottom:-4px;border-left:1px solid var(--line)}
+.tog{width:18px;height:18px;flex:none;padding:0;border:0;background:none;color:var(--muted);font:600 .8rem var(--mono);line-height:18px;text-align:center;border-radius:4px}
+.tog.leaf{visibility:hidden}
+.node{--c:var(--m-cmsis);display:inline-flex;align-items:center;gap:6px;min-width:0}
+.node .sw{width:8px;height:8px;border-radius:2px;background:var(--c);flex:none}
+.node .nm{white-space:nowrap}
+.tag{font:500 .68rem var(--sans);padding:1px 6px;border-radius:4px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.tag.ov{border-color:var(--invert);color:var(--invert)}
+.loc{color:var(--muted);font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right;direction:rtl}
+.loc bdi{direction:ltr;unicode-bidi:isolate}
+.ref .nm{color:var(--muted);font-style:italic}
+/* table */
+table{border-collapse:collapse;width:100%;min-width:820px;font-size:.84rem}
+th,td{text-align:left;padding:7px 12px;border-top:1px solid var(--line);vertical-align:top}
+th{font:600 .72rem var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-top:0;background:color-mix(in srgb,var(--line) 30%,var(--surface))}
+td.sym{font-family:var(--mono);font-weight:500;white-space:nowrap}
+td.sym .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:7px;background:var(--c)}
+td.p{font-family:var(--mono);font-size:.78rem;word-break:break-all}
+td.k{color:var(--muted);white-space:nowrap}
+/* build */
+.build{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:10px}
+.mod{--c:var(--m-cmsis);padding:12px 14px;display:flex;flex-direction:column;gap:6px;border-top:3px solid var(--c)}
+.mod .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.mod .cnt{font:600 1.1rem var(--mono);font-variant-numeric:tabular-nums}
+.mod .cnt small{font:400 .72rem var(--sans);color:var(--muted)}
+.mod .mk,.mod .dir{font:.74rem var(--mono);color:var(--muted);word-break:break-all}
+.mod .ex{font-size:.76rem;color:var(--muted)}
+.mod .ex code{font-size:.72rem}
+.link{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:0}
+.link > div{padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.link > div + div{border-left:1px solid var(--line)}
+pre{margin:0;font:.78rem/1.6 var(--mono);white-space:pre-wrap;word-break:break-all;color:var(--fg)}
+.mem{width:100%;min-width:0;font-size:.8rem}
+.mem td,.mem th{padding:4px 8px}
+.mem td{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.mem table{min-width:0}
+ol.inc{margin:0;padding-left:1.6em;font:.78rem/1.7 var(--mono);columns:2 300px;column-gap:28px}
+ol.inc li.dup{color:var(--muted);text-decoration:line-through}
+/* findings */
+.findings{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.find{padding:12px 14px;display:flex;flex-direction:column;gap:5px}
+.find .sev{font:600 .68rem var(--sans);letter-spacing:.07em;text-transform:uppercase;color:var(--invert)}
+.find .sev.note{color:var(--muted)}
+.find p{font-size:.86rem}
+.method{font-size:.82rem;color:var(--muted)}
+@media (max-width:700px){
+  .link{grid-template-columns:1fr}
+  .link > div + div{border-left:0;border-top:1px solid var(--line)}
+  .bstep{flex-basis:100%;border-left:0;border-top:1px solid var(--line)}
+  .bstep:first-child{border-top:0}
+  h1{font-size:1.5rem}
+}
+@media (prefers-reduced-motion:no-preference){.row,.edge,.mnode{transition:opacity .15s}}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="crumbs">qorc-sdk / qomu_apps / qomu_helloworldsw / src / main.c</div>
+  <h1>Where main.c's pieces come from</h1>
+  <p>Every function, variable, macro and type that <code>main.c</code> touches, traced to the file that defines it and the sub-makefile that compiles it. The build compiles 65 C files from 12 source directories into <code>GCC_Project/output/</code>, then links every <code>*.o</code> there into one ELF.</p>
+  <div class="legend" id="legend" role="group" aria-label="Highlight a module"></div>
+  <p class="muted" style="font-size:.82rem">Click a module to highlight it in the graph and the call tree. <code>app/</code> means <code>qomu_apps/qomu_helloworldsw/</code>; other paths are relative to the SDK root.</p>
+</header>
+
+<section>
+  <h2><span class="step">Map</span>Module dependencies</h2>
+  <p>Arrows point from caller to callee. Pink dashed arrows go against the expected layering: a library calling back into the app, or two layers that call each other.</p>
+  <div class="panel">
+    <div class="keyline">
+      <span><svg viewBox="0 0 30 8"><line x1="0" y1="4" x2="30" y2="4" stroke="var(--edge)" stroke-width="1.5"/></svg>function call</span>
+      <span><svg viewBox="0 0 30 8"><line x1="0" y1="4" x2="30" y2="4" stroke="var(--edge)" stroke-width="1.5" stroke-dasharray="2 3"/></svg>data reference (extern array)</span>
+      <span><svg viewBox="0 0 30 8"><line x1="0" y1="4" x2="30" y2="4" stroke="var(--invert)" stroke-width="1.5" stroke-dasharray="5 4"/></svg>layering inversion</span>
+    </div>
+    <div class="scroll"><svg id="mgraph" viewBox="0 0 1000 470" role="img" aria-label="Module dependency graph for main.c">
+      <defs>
+        <marker id="mhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="mheadinv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <g id="edges"></g><g id="nodes"></g>
+    </svg></div>
+    <div class="info" id="info" aria-live="polite"><span class="muted">Hover or focus an arrow to see which calls it carries.</span></div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="step">Boot</span>How execution reaches main()</h2>
+  <div class="panel boot">
+    <div class="bstep"><span class="n">VECTOR 0x4</span><span class="fn">Reset_Handler</span><span class="loc">HAL/startup/vectors_CM4F_gcc.c:132</span><span class="why">Linker script sets <code>ENTRY(Reset_Handler)</code>.</span></div>
+    <div class="bstep"><span class="n">COPY .data, ZERO .bss</span><span class="fn">Reset_Handler()</span><span class="loc">HAL/startup/startup_EOSS3B_GCC.c:93</span><span class="why">Built by Makefile_Startup.</span></div>
+    <div class="bstep"><span class="n">CMSIS HOOK</span><span class="fn">SystemInit()</span><span class="loc">app/src/main.c:111</span><span class="why">Empty stub the app must supply.</span></div>
+    <div class="bstep"><span class="n">__START → _start</span><span class="fn">_start</span><span class="loc">newlib crt0 (toolchain, via --specs=nano.specs)</span><span class="why">Runs libc init and constructors.</span></div>
+    <div class="bstep"><span class="n">APPLICATION</span><span class="fn">main()</span><span class="loc">app/src/main.c:63</span><span class="why">Never returns: ends in <code>vTaskStartScheduler()</code>.</span></div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="step">Calls</span>Call tree from main()</h2>
+  <p>Three levels below <code>main()</code>, limited to code that is actually compiled. Italic entries were already expanded higher up. Data references (bitstream, menu table, pin table) are listed where they are consumed.</p>
+  <div class="tree-tools">
+    <div style="display:flex;gap:6px"><button id="expand" type="button">Expand all</button><button id="collapse" type="button">Collapse to direct calls</button></div>
+    <span class="muted" style="font-size:.8rem" id="treecount"></span>
+  </div>
+  <div class="panel scroll"><div class="tree" id="tree" role="tree"></div></div>
+</section>
+
+<section>
+  <h2><span class="step">Symbols</span>Every external name in main.c</h2>
+  <p>Declared-in is the header (or local <code>extern</code>) that makes the name visible to <code>main.c</code>. Defined-in is where the linker finds it.</p>
+  <div class="panel scroll"><table id="symtab">
+    <thead><tr><th>Symbol</th><th>Kind</th><th>Declared in</th><th>Defined in</th><th>Compiled by</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2><span class="step">Build</span>What gets compiled</h2>
+  <p><code>make</code> runs <code>_makedirs_ external_srcs appdir gateware s3gw_drivers</code>. <code>external_srcs</code> expands to Startup, HAL, FreeRTOS, Libraries and BSP, and <code>Libraries</code> runs Power, SysFlash, Utils, FPGA and CLI. Each sub-makefile wildcards <code>*.c</code> in its directory, drops the listed files, and compiles into the shared <code>output/</code> folder.</p>
+  <div class="build" id="build"></div>
+  <p class="muted" style="font-size:.82rem">Present in <code>GCC_Project/makefiles/</code> but never invoked: Audio, Chandalar_BOARD, DatablockManager, DatablockProcessor, FrameworkLib, FreeRTOS_FAT (+Common, +QL), Hybrid, M4, QLUART, SensorFramework, Test, appfpga, qlfs, riff_file.</p>
+
+  <h3 style="margin-top:10px">Link step</h3>
+  <div class="panel link">
+    <div>
+      <span class="muted" style="font-size:.8rem">makefiles/Makefile_output</span>
+<pre>arm-none-eabi-gcc output/*.o
+  -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -Os
+  -T GCC_Project/qomu.ld -Xlinker --gc-sections -Wall -Werror
+  --specs=nano.specs --specs=nosys.specs -lm
+  -L Libraries/CMSIS/lib/GCC -larm_cortexM4lf_math
+  -Wl,-Map,output/qomu_helloworldsw.map
+  -o output/qomu_helloworldsw.elf
+arm-none-eabi-objcopy -O binary  …elf → …bin
+arm-none-eabi-nm …elf             → …sym.txt</pre>
+      <p class="muted" style="font-size:.8rem">Objects come from a glob, so whatever <code>.o</code> files sit in <code>output/</code> are linked. <code>--gc-sections</code> then drops functions nothing reaches (every file is built with <code>-ffunction-sections -fdata-sections</code>).</p>
+    </div>
+    <div>
+      <span class="muted" style="font-size:.8rem">qomu.ld memory regions</span>
+      <div class="mem"><table>
+        <thead><tr><th>Region</th><th>Origin</th><th>Length</th></tr></thead>
+        <tbody>
+          <tr><td>rom (rx)</td><td>0x00000000</td><td>0x27000 · 156 KiB</td></tr>
+          <tr><td>ram (rwx)</td><td>0x20027000</td><td>0x3C800 · 242 KiB</td></tr>
+          <tr><td>spiram</td><td>0x20063800</td><td>0x00800 · 2 KiB</td></tr>
+          <tr><td>HWA</td><td>0x20064000</td><td>0x18000 · 96 KiB</td></tr>
+          <tr><td>shm</td><td>0x2007C000</td><td>0x04000 · 16 KiB</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:10px">Header search order (config-GCC.mk <code>INCLUDE_DIRS</code>)</h3>
+  <div class="panel" style="padding:12px 16px">
+    <ol class="inc">
+      <li>GCC_Project/</li>
+      <li><b>app/inc</b> — wins for FreeRTOSConfig.h, Fw_global_config.h</li>
+      <li>s3-gateware/</li>
+      <li>freertos_gateware/inc</li>
+      <li>Libraries/CMSIS/inc</li>
+      <li>HAL/inc</li>
+      <li>Libraries/cli/inc</li>
+      <li>Libraries/Power/inc</li>
+      <li>FreeRTOS/include</li>
+      <li>FreeRTOS/portable/GCC/ARM_CM4F_quicklogic_s3XX</li>
+      <li class="dup">Libraries/Power/inc</li>
+      <li>Libraries/Utils/inc</li>
+      <li>Libraries/SysFlash/inc</li>
+      <li>BSP/qomu/inc</li>
+      <li class="dup">Libraries/Utils/inc</li>
+      <li>Libraries/FPGA/inc</li>
+      <li>Libraries/DatablockManager/inc</li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <h2><span class="step">Notes</span>Things the trace turned up</h2>
+  <div class="findings">
+    <div class="panel find"><span class="sev">Mismatch</span><h3>Header misspells qomu_hardwaresetup</h3><p><code>BSP/qomu/inc/qomu_hardwaresetup.h:24</code> declares <code>qomu_hardwareSetup</code> (capital S), which is defined nowhere. That's why <code>main.c:60</code> carries its own <code>extern void qomu_hardwaresetup();</code>.</p></div>
+    <div class="panel find"><span class="sev">Mismatch</span><h3>axFPGABitStream_length type</h3><p><code>main.c:47</code> declares it <code>extern int</code>; <code>app/fpga/qomu_fpga.c:1906</code> defines it as <code>uint32_t</code>. The linker can't see the difference and it works on Cortex-M4, but it's undefined behavior by the standard.</p></div>
+    <div class="panel find"><span class="sev">Inversion</span><h3>FreeRTOS tick lives in the Power library</h3><p><code>port.c:682</code> defines <code>vPortSetupTimerInterrupt</code> as <code>weak</code>; the strong copy in <code>Libraries/Power/src/s3x_lpm.c:171</code> replaces it at link time. Meanwhile Power calls <code>xTaskGetSchedulerState</code> back in the kernel.</p></div>
+    <div class="panel find"><span class="sev">Inversion</span><h3>BSP depends on app files</h3><p><code>qomu_hardwaresetup()</code> calls <code>S3x_pwrcfg_init()</code> from <code>app/src/s3x_pwrcfg.c</code> and reads <code>pincfg_table</code> from <code>app/src/pincfg_table.c</code>. Any app using this BSP must provide both.</p></div>
+    <div class="panel find"><span class="sev note">Routing</span><h3>dbg_str goes to USB serial, not the UART</h3><p><code>Fw_global_config.h:92</code> sets <code>DEBUG_UART</code> to <code>UART_ID_USBSERIAL</code>, so <code>dbg_ch_raw → uart_tx_raw → HAL_usbserial_putc</code>. The hardware UART that <code>uart_setup()</code> configures isn't used for these prints, which is why they come after <code>HAL_usbserial_init2</code>.</p></div>
+    <div class="panel find"><span class="sev note">Build hygiene</span><h3>The link globs output/*.o</h3><p>Change a filter in a sub-makefile and the old object stays in <code>output/</code> and keeps getting linked until you <code>make clean</code>.</p></div>
+    <div class="panel find"><span class="sev note">Leftover</span><h3>Copied identity string</h3><p><code>SOFTWARE_VERSION_STR</code> is set to <code>"qorc-sdk/qf_apps/qf_helloworldsw"</code>, the QuickFeather app this one was cloned from.</p></div>
+    <div class="panel find"><span class="sev note">Unused</span><h3>Includes main.c doesn't use directly</h3><p><code>eoss3_hal_gpio.h</code>, <code>eoss3_hal_rtc.h</code>, <code>ql_time.h</code>, <code>s3x_clock.h</code>, <code>s3x_pi.h</code>, <code>semphr.h</code>, <code>timers.h</code>, <code>RtosTask.h</code>, <code>&lt;stdio.h&gt;</code>. Nothing in main.c names anything from them.</p></div>
+    <div class="panel find"><span class="sev note">Not a clash</span><h3>A second main() in Utils</h3><p><code>Libraries/Utils/src/ql_test_signals.c:272</code> has a <code>main()</code>, but it sits under <code>#ifdef TST_QL_MATHOPS</code>, which isn't defined. Tag-based tools will still show two.</p></div>
+  </div>
+  <p class="method">Method: static trace from source (ctags plus a scan of each function body for calls to other compiled functions), using the exact file set the makefiles select. There was no <code>output/</code> folder or ARM toolchain to check against a real <code>.map</code> file. Calls through function pointers (CLI menu handlers, ISRs, task entry points) don't show up as edges, and code inside inactive <code>#if</code> branches may appear in the tree.</p>
+</div>
+
+<script>
+const MODS = {
+  app:{l:"app",d:"qomu_helloworldsw src/ + fpga/"},
+  bsp:{l:"BSP",d:"BSP/qomu"},
+  hal:{l:"HAL",d:"HAL/src"},
+  power:{l:"Power",d:"Libraries/Power"},
+  utils:{l:"Utils",d:"Libraries/Utils"},
+  cli:{l:"CLI",d:"Libraries/cli"},
+  fpga:{l:"FPGA loader",d:"Libraries/FPGA"},
+  gw:{l:"USB serial",d:"freertos_gateware"},
+  rtos:{l:"FreeRTOS",d:"FreeRTOS kernel + port"},
+  cmsis:{l:"CMSIS",d:"header-only"}
+};
+const cv = m => `var(--m-${m})`;
+
+/* ---------- module graph ---------- */
+const NODES = {
+  main:{m:"app",x:500,y:52,t:"main.c",s:"app/src"},
+  bsp:{m:"bsp",x:70,y:200,t:"BSP",s:"qomu_hardwaresetup.c"},
+  fpga:{m:"fpga",x:205,y:200,t:"FPGA loader",s:"fpga_loader.c"},
+  gw:{m:"gw",x:340,y:200,t:"USB serial",s:"freertos_gateware"},
+  utils:{m:"utils",x:475,y:200,t:"Utils",s:"dbg_uart.c"},
+  cli:{m:"cli",x:610,y:200,t:"CLI",s:"Libraries/cli"},
+  rtos:{m:"rtos",x:745,y:200,t:"FreeRTOS",s:"tasks.c, port.c"},
+  cmsis:{m:"cmsis",x:900,y:200,t:"CMSIS",s:"core_cm4.h inline"},
+  appx:{m:"app",x:120,y:360,t:"app support",s:"pwrcfg, pins, fpga, menu"},
+  hal:{m:"hal",x:420,y:360,t:"HAL",s:"clock, uart, pads"},
+  power:{m:"power",x:720,y:360,t:"Power",s:"s3x_clock, s3x_pi, lpm"}
+};
+const W=124,H=46;
+const EDGES = [
+  ["main","bsp","qomu_hardwaresetup()"],
+  ["main","fpga","load_fpga()"],
+  ["main","gw","HAL_usbserial_init2()"],
+  ["main","utils","dbg_str() ×10"],
+  ["main","cli","CLI_start_task()"],
+  ["main","rtos","vTaskStartScheduler()"],
+  ["main","cmsis","NVIC_SetPriority() ×5 (inlined, no object file)"],
+  ["main","hal","S3x_Clk_Enable() ×2, S3x_Clk_Disable() ×2",{c:[300,280]}],
+  ["main","appx","axFPGABitStream[], axFPGABitStream_length, my_main_menu[]",{data:1,c:[160,120]}],
+  ["bsp","appx","S3x_pwrcfg_init(), pincfg_table[]",{inv:1}],
+  ["bsp","hal","configure_s3_pads(), uart_init(), S3x_Clk_Enable()"],
+  ["appx","power","S3x_Clk_Init(), S3x_pi_init() (from s3x_pwrcfg.c)",{c:[420,470]}],
+  ["appx","hal","HAL_GPIO_Write/Read() (LED + button CLI commands)"],
+  ["fpga","hal","S3x_Clk_Enable()"],
+  ["gw","hal","S3x_Clk_Enable(), S3x_Clk_Set_Rate()",{off:-12}],
+  ["hal","gw","HAL_usbserial_putc() (uart_tx_raw when uartid is UART_ID_USBSERIAL)",{inv:1,off:-12}],
+  ["utils","hal","uart_tx_raw()"],
+  ["hal","power","_S3x_Clk_Enable(), _S3x_Clk_Disable()"],
+  ["cli","rtos","xTaskCreate(CLI_task)"],
+  ["power","rtos","xTaskGetSchedulerState()",{inv:1,off:-12}],
+  ["rtos","power","vPortSetupTimerInterrupt() (strong override of weak port.c symbol)",{inv:1,off:-12}]
+];
+function clip(cx,cy,tx,ty){ // point on box boundary from center toward target
+  const dx=tx-cx,dy=ty-cy; const sx=Math.abs(dx)/(W/2+4), sy=Math.abs(dy)/(H/2+4); const s=Math.max(sx,sy)||1;
+  return [cx+dx/s, cy+dy/s];
+}
+const svgNS="http://www.w3.org/2000/svg";
+const gE=document.getElementById("edges"), gN=document.getElementById("nodes"), info=document.getElementById("info");
+const edgeEls=[];
+EDGES.forEach(([a,b,calls,o={}])=>{
+  const A=NODES[a],B=NODES[b];
+  let cx,cy;
+  const dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(dx,dy),nx=-dy/len,ny=dx/len,off=o.off||0;
+  if(o.c){[cx,cy]=o.c}else{cx=(A.x+B.x)/2+nx*off*2;cy=(A.y+B.y)/2+ny*off*2}
+  const p1=clip(A.x+nx*off,A.y+ny*off,cx,cy), p2=clip(B.x+nx*off,B.y+ny*off,cx,cy);
+  const g=document.createElementNS(svgNS,"g");
+  g.setAttribute("class","edge"+(o.inv?" inv":"")+(o.data?" data":""));
+  g.setAttribute("tabindex","0");
+  g.dataset.a=a; g.dataset.b=b;
+  const d=`M${p1[0].toFixed(1)},${p1[1].toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  g.innerHTML=`<path class="hit" d="${d}"/><path class="vis" d="${d}" marker-end="url(#${o.inv?"mheadinv":"mhead"})"/>`;
+  const show=()=>{g.classList.add("hot");info.innerHTML=`<span><b>${NODES[a].t} → ${NODES[b].t}</b>${o.inv?' <span class="tag ov">inversion</span>':''}${o.data?' <span class="tag">data</span>':''}</span><span class="mono">${calls}</span>`};
+  const hide=()=>g.classList.remove("hot");
+  g.addEventListener("mouseenter",show);g.addEventListener("focus",show);
+  g.addEventListener("mouseleave",hide);g.addEventListener("blur",hide);
+  gE.appendChild(g); edgeEls.push(g);
+});
+const nodeEls=[];
+Object.entries(NODES).forEach(([k,n])=>{
+  const g=document.createElementNS(svgNS,"g");
+  g.setAttribute("class","mnode"); g.setAttribute("tabindex","0"); g.dataset.k=k; g.dataset.m=n.m;
+  g.setAttribute("role","button"); g.setAttribute("aria-label",`Highlight ${n.t}`);
+  g.innerHTML=`<rect x="${n.x-W/2}" y="${n.y-H/2}" width="${W}" height="${H}" rx="6" style="stroke:${cv(n.m)}"/>
+    <rect x="${n.x-W/2}" y="${n.y-H/2}" width="5" height="${H}" rx="2" style="fill:${cv(n.m)};stroke:none"/>
+    <text x="${n.x+2}" y="${n.y-3}" text-anchor="middle" font-size="13" font-weight="600">${n.t}</text>
+    <text class="sub" x="${n.x+2}" y="${n.y+13}" text-anchor="middle">${n.s}</text>`;
+  const act=()=>setFocus(n.m);
+  g.addEventListener("click",act);
+  g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();act()}});
+  gN.appendChild(g); nodeEls.push(g);
+});
+
+/* ---------- call tree ---------- */
+// [name, module, location, children, flags]
+const A="app/";
+const T = ["main()","app",A+"src/main.c:63",[
+  ["qomu_hardwaresetup()","bsp","BSP/qomu/src/qomu_hardwaresetup.c:48",[
+    ["S3x_pwrcfg_init()","app",A+"src/s3x_pwrcfg.c:295",[
+      ["S3x_Clk_Init()","power","Libraries/Power/src/s3x_clock.c:1252"],
+      ["S3x_pi_init()","power","Libraries/Power/src/s3x_pi.c:289"]],{tag:"back into app"}],
+    ["system_init()","bsp","BSP/qomu/src/qomu_hardwaresetup.c:60",[
+      ["S3x_Clk_Enable()","hal","HAL/src/s3x_clock_hal.c:39",null,{ref:1}]],{tag:"static"}],
+    ["ldo_init()","bsp","BSP/qomu/src/qomu_hardwaresetup.c:86",null,{tag:"static"}],
+    ["configure_s3_pads()","hal","HAL/src/eoss3_hal_pad_config.c:251",[
+      ["pincfg_table[]","app",A+"src/pincfg_table.c",null,{tag:"data"}],
+      ["HAL_PAD_Config()","hal","HAL/src/eoss3_hal_pad_config.c:123"]]],
+    ["uart_setup()","bsp","BSP/qomu/src/qomu_hardwaresetup.c:95",[
+      ["uart_init(UART_ID_HW)","hal","HAL/src/eoss3_hal_uart.c:367"]],{tag:"static"}]]],
+  ["nvic_init()","app",A+"src/main.c:99",[
+    ["NVIC_SetPriority() ×5","cmsis","Libraries/CMSIS/inc/core_cm4.h:1551",null,{tag:"inline"}]],{tag:"static"}],
+  ["S3x_Clk_Disable()","hal","HAL/src/s3x_clock_hal.c:44",[
+    ["_S3x_Clk_Disable()","power","Libraries/Power/src/s3x_clock.c:1119",[
+      ["s3x_get_pi()","power","Libraries/Power/src/s3x_pi.c:115"],
+      ["s3x_get_pi_gindex()","power","Libraries/Power/src/s3x_pi.c:128"],
+      ["s3x_pi_set_cfg_st()","power","Libraries/Power/src/s3x_pi.c:151"],
+      ["s3x_pi_set_clkg_st()","power","Libraries/Power/src/s3x_pi.c:251"],
+      ["s3x_clkd_handle_gate()","power","Libraries/Power/src/s3x_clock.c:994"],
+      ["xTaskGetSchedulerState()","rtos","FreeRTOS/tasks.c:3889"]]]]],
+  ["S3x_Clk_Enable()","hal","HAL/src/s3x_clock_hal.c:39",[
+    ["_S3x_Clk_Enable()","power","Libraries/Power/src/s3x_clock.c:1065",[
+      ["s3x_get_pi()","power","Libraries/Power/src/s3x_pi.c:115",null,{ref:1}],
+      ["s3x_get_pi_gindex()","power","Libraries/Power/src/s3x_pi.c:128",null,{ref:1}],
+      ["s3x_pi_set_active_st()","power","Libraries/Power/src/s3x_pi.c:188"],
+      ["s3x_pi_set_clkg_st()","power","Libraries/Power/src/s3x_pi.c:251",null,{ref:1}],
+      ["s3x_clkd_handle_gate()","power","Libraries/Power/src/s3x_clock.c:994",null,{ref:1}],
+      ["xTaskGetSchedulerState()","rtos","FreeRTOS/tasks.c:3889",null,{ref:1}]]]]],
+  ["load_fpga()","fpga","Libraries/FPGA/src/fpga_loader.c:67",[
+    ["axFPGABitStream[]","app",A+"fpga/qomu_fpga.c:4",null,{tag:"data"}],
+    ["S3x_Clk_Enable()","hal","HAL/src/s3x_clock_hal.c:39",null,{ref:1}]]],
+  ["HAL_usbserial_init2()","gw","freertos_gateware/src/eoss3_hal_fpga_usbserial.c:81",[
+    ["HAL_usbserial_init_common()","gw","freertos_gateware/src/eoss3_hal_fpga_usbserial.c:38",[
+      ["S3x_Clk_Enable()","hal","HAL/src/s3x_clock_hal.c:39",null,{ref:1}],
+      ["S3x_Clk_Set_Rate()","hal","HAL/src/s3x_clock_hal.c:49"],
+      ["HAL_usbserial_ipid()","gw","freertos_gateware/src/eoss3_hal_fpga_usbserial.c:110"],
+      ["HAL_usbserial_isrinit()","gw","freertos_gateware/src/eoss3_hal_fpga_usbserial.c:118"]]]]],
+  ["dbg_str()","utils","Libraries/Utils/src/dbg_uart.c:167",[
+    ["dbg_ch()","utils","Libraries/Utils/src/dbg_uart.c:158",[
+      ["dbg_nl()","utils","Libraries/Utils/src/dbg_uart.c:152"],
+      ["dbg_ch_raw()","utils","Libraries/Utils/src/dbg_uart.c:121",[
+        ["uart_tx_raw()","hal","HAL/src/eoss3_hal_uart.c:547",[
+          ["HAL_usbserial_putc()","gw","freertos_gateware/src/eoss3_hal_fpga_usbserial.c:95",null,{tag:"DEBUG_UART"}]]]]]]],
+    ["_semihost_write()","utils","Libraries/Utils/src/dbg_uart.c:91",null,{tag:"semihost only"}]]],
+  ["CLI_start_task()","cli","Libraries/cli/src/cli_platform.c:140",[
+    ["my_main_menu[]","app",A+"src/main_dbg_cli_menu.c:91",null,{tag:"data"}],
+    ["CLI_init()","cli","Libraries/cli/src/cli_loop.c:82",[
+      ["CLI_cmd_stack_clear()","cli","Libraries/cli/src/cli_loop.c:61"]]],
+    ["xTaskCreate()","rtos","FreeRTOS/tasks.c:753",[
+      ["pvPortMalloc()","rtos","FreeRTOS/portable/MemMang/heap_4.c:139"],
+      ["prvInitialiseNewTask()","rtos","FreeRTOS/tasks.c:844"],
+      ["prvAddNewTaskToReadyList()","rtos","FreeRTOS/tasks.c:1053"]]],
+    ["CLI_task()","cli","Libraries/cli/src/cli_platform.c:111",null,{tag:"task entry, runs later"}]]],
+  ["vTaskStartScheduler()","rtos","FreeRTOS/tasks.c:1948",[
+    ["vApplicationGetIdleTaskMemory()","rtos","FreeRTOS/freertos_static_memory.c:10"],
+    ["xTaskCreate()","rtos","FreeRTOS/tasks.c:753",null,{ref:1}],
+    ["xPortStartScheduler()","rtos","FreeRTOS/portable/GCC/ARM_CM4F_quicklogic_s3XX/port.c:290",[
+      ["vPortSetupTimerInterrupt()","power","Libraries/Power/src/s3x_lpm.c:171",null,{tag:"overrides weak",ov:1}],
+      ["vPortEnableVFP()","rtos","FreeRTOS/portable/GCC/ARM_CM4F_quicklogic_s3XX/port.c:704"],
+      ["prvPortStartFirstTask()","rtos","FreeRTOS/portable/GCC/ARM_CM4F_quicklogic_s3XX/port.c:264"]]]]]
+]];
+const treeEl=document.getElementById("tree");
+let rowId=0; const rows=[];
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;")}
+function build(node,depth,parentRow){
+  const [name,m,loc,kids,f={}]=node;
+  const id=rowId++;
+  const r=document.createElement("div");
+  r.className="row"+(f.ref?" ref":""); r.setAttribute("role","treeitem"); r.style.setProperty("--c",cv(m));
+  r.dataset.m=m; r.dataset.id=id; r.dataset.depth=depth;
+  const guides='<span class="guide"></span>'.repeat(depth);
+  const has=kids&&kids.length;
+  r.innerHTML=`<div class="fncell">${guides}<button type="button" class="tog${has?"":" leaf"}" aria-label="Toggle ${esc(name)}" ${has?'aria-expanded="true"':'tabindex="-1"'}>${has?"−":""}</button>
+    <span class="node" style="--c:${cv(m)}"><span class="sw"></span><span class="nm">${esc(name)}</span>${f.tag?`<span class="tag${f.ov?" ov":""}">${f.tag}</span>`:""}${f.ref?'<span class="tag">see above</span>':""}</span></div>
+    <div class="loc" title="${loc}"><bdi>${loc}</bdi></div>`;
+  treeEl.appendChild(r);
+  const rec={el:r,depth,kids:[],open:true,parent:parentRow};
+  rows.push(rec); if(parentRow) parentRow.kids.push(rec);
+  if(has){
+    r.querySelector(".tog").addEventListener("click",()=>setOpen(rec,!rec.open));
+    kids.forEach(k=>build(k,depth+1,rec));
+  }
+}
+function setVis(rec,vis){rec.el.hidden=!vis; rec.kids.forEach(k=>setVis(k,vis&&rec.open))}
+function setOpen(rec,open){rec.open=open;const t=rec.el.querySelector(".tog");t.textContent=open?"−":"+";t.setAttribute("aria-expanded",open);rec.kids.forEach(k=>setVis(k,open))}
+build(T,0,null);
+document.getElementById("treecount").textContent=`${rows.length} entries · ${new Set(rows.map(r=>r.el.dataset.m)).size} modules`;
+document.getElementById("expand").onclick=()=>rows.forEach(r=>{if(r.kids.length)setOpen(r,true)});
+document.getElementById("collapse").onclick=()=>{rows.forEach(r=>{if(r.kids.length&&r.depth>=1)setOpen(r,false)});setOpen(rows[0],true)};
+
+/* ---------- symbol table ---------- */
+const S=[
+  ["main","app","function, entry","—","app/src/main.c:63","Makefile_appdir"],
+  ["SystemInit","app","function, CMSIS hook","called from HAL/startup/startup_EOSS3B_GCC.c:184","app/src/main.c:111","Makefile_appdir"],
+  ["nvic_init","app","static function","app/src/main.c:61","app/src/main.c:99","Makefile_appdir"],
+  ["SOFTWARE_VERSION_STR","app","global variable","—","app/src/main.c:52","Makefile_appdir"],
+  ["qomu_hardwaresetup","bsp","function","local extern, app/src/main.c:60","BSP/qomu/src/qomu_hardwaresetup.c:48","Makefile_qomu_BSP"],
+  ["S3x_Clk_Disable","hal","function","HAL/inc/s3x_clock_hal.h:116","HAL/src/s3x_clock_hal.c:44","Makefile_HAL"],
+  ["S3x_Clk_Enable","hal","function","HAL/inc/s3x_clock_hal.h:113","HAL/src/s3x_clock_hal.c:39","Makefile_HAL"],
+  ["S3X_FB_21_CLK, S3X_FB_16_CLK","hal","enum constants","HAL/inc/s3x_clock_hal.h:94, :86","header only","—"],
+  ["S3X_A1_CLK, S3X_CFG_DMA_A1_CLK","hal","enum constants","HAL/inc/s3x_clock_hal.h:51, :43","header only","—"],
+  ["load_fpga","fpga","function","Libraries/FPGA/inc/fpga_loader.h:25","Libraries/FPGA/src/fpga_loader.c:67","Makefile_FPGA (via Makefile_Libraries)"],
+  ["axFPGABitStream","app","uint32_t[] (bitstream)","local extern, app/src/main.c:46","app/fpga/qomu_fpga.c:4","Makefile_gateware"],
+  ["axFPGABitStream_length","app","variable","local extern int, app/src/main.c:47","app/fpga/qomu_fpga.c:1906 (uint32_t)","Makefile_gateware"],
+  ["HAL_usbserial_init2","gw","function","freertos_gateware/inc/eoss3_hal_fpga_usbserial.h:82","freertos_gateware/src/eoss3_hal_fpga_usbserial.c:81","Makefile_s3gw_drivers"],
+  ["dbg_str","utils","function","Libraries/Utils/inc/dbg_uart.h:90","Libraries/Utils/src/dbg_uart.c:167","Makefile_Utils (via Makefile_Libraries)"],
+  ["CLI_start_task","cli","function","Libraries/cli/inc/cli.h:48","Libraries/cli/src/cli_platform.c:140","Makefile_cli (via Makefile_Libraries)"],
+  ["my_main_menu","app","const struct cli_cmd_entry[]","local extern, app/src/main.c:49","app/src/main_dbg_cli_menu.c:91 (needs FEATURE_CLI_DEBUG_INTERFACE=1)","Makefile_appdir"],
+  ["struct cli_cmd_entry","cli","type","Libraries/cli/inc/cli/cli_structs.h:42","header only","—"],
+  ["vTaskStartScheduler","rtos","function","FreeRTOS/include/task.h:1170","FreeRTOS/tasks.c:1948","Makefile_FreeRTOS"],
+  ["configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY","app","macro = 5","app/inc/FreeRTOSConfig.h:179","header only","—"],
+  ["NVIC_SetPriority","cmsis","static inline function","Libraries/CMSIS/inc/core_cm4.h:1551","inlined into main.o","—"],
+  ["Ffe0_IRQn, SpiMs_IRQn, CfgDma_IRQn, Uart_IRQn, FbMsg_IRQn","hal","IRQn_Type enum","HAL/inc/eoss3_dev.h:86, :80, :81, :71, :68","header only","—"],
+  ["__DATE__, __TIME__","cmsis","compiler macros","GCC built-in","—","—"]
+];
+const tb=document.querySelector("#symtab tbody");
+S.forEach(([s,m,k,d,f,mk])=>{
+  const tr=document.createElement("tr"); tr.dataset.m=m; tr.style.setProperty("--c",cv(m));
+  tr.innerHTML=`<td class="sym"><span class="sw"></span>${esc(s)}</td><td class="k">${esc(k)}</td><td class="p">${esc(d)}</td><td class="p">${esc(f)}</td><td class="p">${esc(mk)}</td>`;
+  tb.appendChild(tr);
+});
+
+/* ---------- build cards ---------- */
+const B=[
+  ["Startup","hal","Makefile_Startup","HAL/startup",2,"two named files: startup_EOSS3B_GCC.c, vectors_CM4F_gcc.c"],
+  ["HAL","hal","Makefile_HAL","HAL/src",15,"excludes eoss3_hal_audio.c, _ffe.c, _fpga_adc.c, _i2s_master_assp.c"],
+  ["FreeRTOS","rtos","Makefile_FreeRTOS","FreeRTOS/ + portable/",10,"8 kernel files plus port.c (ARM_CM4F_quicklogic_s3XX) and heap_4.c"],
+  ["BSP","bsp","Makefile_qomu_BSP","BSP/qomu/src",1,"qomu_hardwaresetup.c"],
+  ["Power","power","Makefile_Power","Libraries/Power/src",7,"excludes s3x_fsm_interface.c, s3x_pwrcfg_prototype.c"],
+  ["SysFlash","cmsis","Makefile_SysFlash","Libraries/SysFlash/src",1,"spi_flash.c; nothing in main's tree uses it"],
+  ["Utils","utils","Makefile_Utils","Libraries/Utils/src",11,"excludes micro_tick64.c"],
+  ["FPGA loader","fpga","Makefile_FPGA","Libraries/FPGA/src",1,"fpga_loader.c"],
+  ["CLI","cli","Makefile_cli","Libraries/cli/src",7,"excludes cli_filesystem.c, cli_fsminterface.c"],
+  ["appdir","app","Makefile_appdir","app/src",8,"excludes audio_pipeline_example.c, h2d_protocol.c, ql_hostTask.c, ql_smart_remote_app.c"],
+  ["gateware","app","Makefile_gateware","app/fpga",1,"qomu_fpga.c: the FPGA bitstream as a C array. No RTL is synthesized (RTL_TOP_MODULE is empty)"],
+  ["s3gw_drivers","gw","Makefile_s3gw_drivers","freertos_gateware/src",1,"only eoss3_hal_fpga_usbserial.c"]
+];
+const bd=document.getElementById("build");
+B.forEach(([n,m,mk,dir,c,ex])=>{
+  const d=document.createElement("div"); d.className="panel mod"; d.dataset.m=m; d.style.setProperty("--c",cv(m));
+  d.innerHTML=`<div class="top"><h3>${n}</h3><span class="cnt">${c} <small>.c</small></span></div><span class="mk">makefiles/${mk}</span><span class="dir">${dir}</span><span class="ex">${esc(ex)}</span>`;
+  bd.appendChild(d);
+});
+
+/* ---------- legend + focus ---------- */
+const lg=document.getElementById("legend"); let cur=null;
+Object.entries(MODS).forEach(([k,v])=>{
+  const b=document.createElement("button"); b.type="button"; b.className="chip"; b.style.setProperty("--c",cv(k));
+  b.textContent=v.l; b.title=v.d; b.dataset.m=k; b.setAttribute("aria-pressed","false");
+  b.onclick=()=>setFocus(k); lg.appendChild(b);
+});
+function setFocus(m){
+  cur = (cur===m)?null:m;
+  lg.querySelectorAll(".chip").forEach(c=>c.setAttribute("aria-pressed",String(c.dataset.m===cur)));
+  nodeEls.forEach(g=>g.classList.toggle("dim",!!cur&&g.dataset.m!==cur));
+  edgeEls.forEach(g=>{const ma=NODES[g.dataset.a].m, mb=NODES[g.dataset.b].m; g.classList.toggle("dim",!!cur&&ma!==cur&&mb!==cur)});
+  rows.forEach(r=>{const on=r.el.dataset.m===cur; r.el.classList.toggle("hit",!!cur&&on); r.el.classList.toggle("dim",!!cur&&!on)});
+  if(cur){ // make every matching row visible
+    rows.filter(r=>r.el.dataset.m===cur).forEach(r=>{let p=r.parent;while(p){if(!p.open)setOpen(p,true);p=p.parent}});
+  }
+}
+</script>
+
+</body></html>
