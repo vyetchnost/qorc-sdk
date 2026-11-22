@@ -3,8 +3,11 @@ OUTPUT_FORMAT ("elf32-littlearm", "elf32-bigarm", "elf32-littlearm")
 ENTRY(Reset_Handler)
 MEMORY
 {
-	rom (rx)  : ORIGIN = 0x00000000, LENGTH = 0x00027000
-	ram (rwx) : ORIGIN = 0x20027000, LENGTH = 0x0003c800
+	/* qomu_scheme: boundary moved up 32K (was rom 0x27000 / ram 0x20027000).
+	   The bootloader accepts images up to 440K; the bitstream is const so it
+	   no longer needs a RAM copy. */
+	rom (rx)  : ORIGIN = 0x00000000, LENGTH = 0x0002F000
+	ram (rwx) : ORIGIN = 0x2002F000, LENGTH = 0x00034800
 	spiram (rw) : ORIGIN = 0x20063800, LENGTH = 0x0000800
 	HWA (rw)  : ORIGIN = 0x20064000, LENGTH = 0x00018000
 	shm       : ORIGIN = 0x2007C000, LENGTH = 0x00004000

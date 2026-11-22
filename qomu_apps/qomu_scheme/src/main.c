@@ -43,7 +43,7 @@
 #include "cli.h"
 
 #include "fpga_loader.h"    // API for loading FPGA
-extern uint32_t axFPGABitStream[];      // FPGA bitstream
+extern const uint32_t axFPGABitStream[]; // FPGA bitstream (const: stays in the image, not copied to RAM)
 extern int      axFPGABitStream_length; // length of axFPGABitStream array in bytes
 
 extern const struct cli_cmd_entry my_main_menu[];
@@ -72,7 +72,7 @@ int main(void)
     S3x_Clk_Disable(S3X_FB_16_CLK);
     S3x_Clk_Enable(S3X_A1_CLK);
     S3x_Clk_Enable(S3X_CFG_DMA_A1_CLK);
-    load_fpga(axFPGABitStream_length,axFPGABitStream);
+    load_fpga(axFPGABitStream_length,(uint32_t *)axFPGABitStream);
     // Use 0x6141 as USB serial product ID (USB PID)
     HAL_usbserial_init2(false, false, 0x6141);        // Start USB serial not using interrupts
     for (volatile int i = 0; i != 4000000; i++) ;   // Give it time to enumerate

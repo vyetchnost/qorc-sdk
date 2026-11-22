@@ -1,7 +1,7 @@
 // generated on 2021/02/17 14:25 : convert_fbcfg_to_cpuwrites.pl C:/Anthony/SVN/syssw/branches/OP2.0/OP2_0/FSM/QL-EOSS3-SW/qf_apps/qf_simple_app/fpga/ShiftRegPattern.qlal4s3b.AL4S3B_FPGA_top.Qomu
 #include <stdint.h>
 
-uint32_t	axFPGABitStream[] = {
+const uint32_t	axFPGABitStream[] = {
 	 0x00002808, 0x00000468, 0x00004452, 0x00009014, 0x00004924, 0x00000a29, 0x0000800a, 0x00001012, 0x00005514, 0x00004385,
 	 0x00000289, 0x0000c82a, 0x00008402, 0x00000104, 0x000003c5, 0x000002b1, 0x00008002, 0x0000840a, 0x00001550, 0x00001301,
 	 0x000002a5, 0x00000068, 0x00000408, 0x00000452, 0x00009804, 0x00000024, 0x0000ab29, 0x0000008a, 0x00003112, 0x00005454,
