@@ -201,7 +201,8 @@ void scm_error(const char *msg, scm_obj irritant)
 static void check_stack(void)
 {
     char *here = (char *)__builtin_frame_address(0);
-    if (stack_base && stack_max && (size_t)(stack_base - here) > stack_max)
+    /* signed: callers shallower than the recorded base give a negative depth */
+    if (stack_base && stack_max && (ptrdiff_t)(stack_base - here) > (ptrdiff_t)stack_max)
         scm_error("recursion too deep (C stack limit)", NULL);
 }
 
@@ -2315,7 +2316,10 @@ int scm_eval_cstr(const char *src)
     int saved_gc = gctop;
     volatile int result = 0;
 
-    if (!stack_base) stack_base = (char *)__builtin_frame_address(0);
+    {   /* keep the shallowest entry point seen as the stack base */
+        char *here = (char *)__builtin_frame_address(0);
+        if (!stack_base || here > stack_base) stack_base = here;
+    }
     err_jmp = &jb;
     if (setjmp(jb)) {
         result = -1;
