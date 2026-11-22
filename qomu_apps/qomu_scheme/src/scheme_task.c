@@ -28,8 +28,25 @@ static uint8_t scheme_heap[SCHEME_HEAP_BYTES] __attribute__((aligned(8)));
 
 /* ---------------------------------------------------------------- console I/O */
 
+/*
+ * The TX FIFO only drains while the host has the port open. Never block
+ * forever: wait up to ~100 ms for room, then drop output until it drains
+ * again, so the REPL keeps running with no terminal attached.
+ */
+static int tx_stalled;
+
 static void q_putc(int c)
 {
+    int waited = 0;
+    while (HAL_usbserial_tx_get_fifo_status() == FPGA_USBSERIAL_TX_FIFO_FULL) {
+        if (tx_stalled || waited >= 100) {
+            tx_stalled = 1;
+            return;
+        }
+        vTaskDelay(1);
+        waited++;
+    }
+    tx_stalled = 0;
     HAL_usbserial_putc((char)c);
 }
 
@@ -193,8 +210,8 @@ static void scheme_task(void *arg)
     static const scm_io io = { q_putc, q_getc, q_avail, 1 };
     (void)arg;
 
-    /* Boot checkpoints (temporary): blue = in scm_init, green = printing banner,
-     * all off = waiting for console input. */
+    /* Boot checkpoints (temporary): blue = in scm_init, green = waiting for
+     * the first keypress, all off = REPL running. */
     board_led(LED_BLUE, 1);
     scm_init(scheme_heap, sizeof scheme_heap, &io);
     scm_set_stack_limit(SCHEME_STACK_BYTES - 3 * 1024);
@@ -216,10 +233,14 @@ static void scheme_task(void *arg)
     board_led(LED_BLUE, 0);
     board_led(LED_GREEN, 1);
 
+    /* Print the banner once someone is typing, i.e. a terminal is open. */
+    while (!q_avail())
+        vTaskDelay(10);
+    board_led(LED_GREEN, 0);
+
     scm_puts("\nQomu Scheme - ");
     scm_display(scm_from_int((int64_t)scm_free_cells()));
     scm_puts(" cells free. Type (help) for board commands.\n");
-    board_led(LED_GREEN, 0);
 
     for (;;)
         scm_repl();         /* only returns on EOF, which the tty never sends */
