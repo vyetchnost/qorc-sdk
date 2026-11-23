@@ -68,11 +68,13 @@ static volatile uint32_t rx_head;           /* written by the ISR   */
 static volatile uint32_t rx_tail;           /* written by the REPL, and the ISR on ^C */
 static volatile int rx_break;
 static volatile uint32_t rx_dropped;        /* bytes lost to a full ring */
+static volatile uint32_t rx_irqs;           /* ISR entries (diagnostics) */
 
 static void usb_rx_isr(void)
 {
     /* Always drain the FIFO: the interrupt is level-triggered and would
      * re-fire forever if bytes were left behind. */
+    rx_irqs++;
     while (HAL_usbserial_dataavailable()) {
         int c = HAL_usbserial_getc() & 0xff;
         uint32_t next = (rx_head + 1) % SCHEME_RX_BYTES;
@@ -448,6 +450,36 @@ static const char board_prelude[] =
 
 /* ---------------------------------------------------------------- task */
 
+/* Bring-up diagnostics while waiting for the first key: one line a second
+ * with both FIFO flag nibbles, the RX interrupt enable and count, bytes in
+ * the input ring and the gateware USB counters. Seeing these lines at all
+ * proves M4->USB works; typing should move u2m (FIFO) and then irq/ring. */
+static void put_hex(uint32_t v, int digits)
+{
+    while (digits--) q_putc("0123456789abcdef"[(v >> (4 * digits)) & 0xf]);
+}
+
+static void put_str(const char *t)
+{
+    while (*t) q_putc(*t++);
+}
+
+static void wait_status_line(void)
+{
+    uint32_t l = 0, st = 0, v = 0, t = 0;
+    put_str("[wait] u2m=");  put_hex(pusbserial_regs->u2m_fifo_flags, 1);
+    put_str(" m2u=");        put_hex(pusbserial_regs->m2u_fifo_flags, 1);
+    put_str(" ien=");        put_hex(pusbserial_regs->u2m_fifo_int_en & 1, 1);
+    put_str(" irqs=");       put_hex(rx_irqs, 4);
+    put_str(" ring=");       put_hex((rx_head - rx_tail) % SCHEME_RX_BYTES, 4);
+    if (usb_dbg_read(&l, &st, &v, &t)) {
+        put_str(" usb l/s/v/t=");
+        put_hex(l, 4); q_putc('/'); put_hex(st, 4); q_putc('/');
+        put_hex(v, 4); q_putc('/'); put_hex(t, 4);
+    }
+    put_str("\r\n");
+}
+
 static void scheme_task(void *arg)
 {
     static const scm_io io = { q_putc, q_getc, q_avail, 1, q_brk };
@@ -486,6 +518,8 @@ static void scheme_task(void *arg)
         unsigned tick = 0;
         while (!q_avail()) {
             usb_dbg_leds(tick++);
+            if (tick % 20 == 0)
+                wait_status_line();     /* temporary bring-up diagnostics */
             vTaskDelay(50);
         }
     }
