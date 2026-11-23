@@ -247,6 +247,111 @@ static scm_obj p_led(scm_obj args)
     return SCM_UNSPEC;
 }
 
+/* ---------------------------------------------------------------- diagnostics */
+
+#define DEMCR       (*(volatile uint32_t *)0xE000EDFC)   /* Cortex-M debug block */
+#define DWT_CTRL    (*(volatile uint32_t *)0xE0001000)
+#define DWT_CYCCNT  (*(volatile uint32_t *)0xE0001004)
+
+/* USB-serial core registers (see fpga_usbserial_regs_t) */
+#define USB_REG(off) ((volatile uint32_t *)((uintptr_t)pusbserial_regs + (off)))
+#define USB_DEVICE_ID   0x00
+#define USB_U2M_FLAGS   0x40
+
+static void cyccnt_on(void)
+{
+    DEMCR |= 1u << 24;          /* TRCENA */
+    DWT_CTRL |= 1u;             /* CYCCNTENA */
+}
+
+/* cycles for n reads of *addr, interrupts masked so the ISR can't skew it */
+static uint32_t time_reads(volatile uint32_t *addr, uint32_t n)
+{
+    uint32_t t0, t1, i, sink = 0;
+    taskENTER_CRITICAL();
+    t0 = DWT_CYCCNT;
+    for (i = 0; i < n; i++)
+        sink += *addr;
+    t1 = DWT_CYCCNT;
+    taskEXIT_CRITICAL();
+    (void)sink;
+    return t1 - t0;
+}
+
+static void put_num(const char *label, double v, const char *unit)
+{
+    scm_puts(label);
+    scm_display(scm_from_num(v));
+    scm_puts(unit);
+}
+
+/*
+ * (bench-fpga-read n) - time n reads of a USB-core register vs SRAM, report
+ * the CPU clock and an estimate of the ISR's drain rate. Returns cycles per
+ * FPGA register read.
+ */
+static scm_obj p_bench_fpga_read(scm_obj args)
+{
+    static volatile uint32_t sram_word;
+    int64_t n64 = scm_to_int(scm_arg(&args));
+    uint32_t n, c_sram, c_flags, c_id, t0, t1;
+    double mhz, per_sram, per_flags, per_id, per_byte;
+
+    if (n64 < 1 || n64 > 100000) scm_error("bench-fpga-read: n must be 1..100000", NULL);
+    n = (uint32_t)n64;
+    cyccnt_on();
+
+    t0 = DWT_CYCCNT;
+    vTaskDelay(pdMS_TO_TICKS(100));
+    t1 = DWT_CYCCNT;
+    mhz = (double)(t1 - t0) / 100000.0;
+
+    c_sram = time_reads(&sram_word, n);
+    c_flags = time_reads(USB_REG(USB_U2M_FLAGS), n);
+    c_id = time_reads(USB_REG(USB_DEVICE_ID), n);
+
+    per_sram = (double)c_sram / n;
+    per_flags = (double)c_flags / n;
+    per_id = (double)c_id / n;
+    /* ISR per byte: one flags read + one data read, plus loop/ring overhead */
+    per_byte = 2.0 * per_flags + 12.0;
+
+    put_num("CPU clock:          ", mhz, " MHz\n");
+    put_num("SRAM read (loop):   ", per_sram, " cycles\n");
+    put_num("RX flags read:      ", per_flags, " cycles");
+    put_num(" = ", per_flags * 1000.0 / mhz, " ns\n");
+    put_num("device_id read:     ", per_id, " cycles\n");
+    put_num("est. drain ceiling: ", mhz * 1000.0 / per_byte, " KB/s");
+    scm_puts(" (USB full-speed bursts can reach ~1000)\n");
+    return scm_from_num(per_flags);
+}
+
+/*
+ * (usb-rx-probe ms) - stop draining the RX FIFO for ms milliseconds and print
+ * every change of the RX status flags, to learn how they encode fill level.
+ * Keep what you type or paste during the probe under 512 bytes.
+ */
+static scm_obj p_usb_rx_probe(scm_obj args)
+{
+    int64_t ms = scm_to_int(scm_arg(&args));
+    uint32_t last = 0xffffffffu, t;
+    if (ms < 1 || ms > 60000) scm_error("usb-rx-probe: ms must be 1..60000", NULL);
+    scm_puts("RX interrupt off; type or paste now (< 512 bytes)...\n");
+    pusbserial_regs->u2m_fifo_int_en = 0;
+    for (t = 0; t <= (uint32_t)ms; t++) {
+        uint32_t f = *USB_REG(USB_U2M_FLAGS) & 0xf;
+        if (f != last) {
+            put_num("  t=", (double)t, " ms");
+            put_num("  flags=", (double)f, "\n");
+            last = f;
+        }
+        vTaskDelay(1);
+    }
+    pusbserial_regs->u2m_fifo_int_en = 1;     /* ISR drains what arrived */
+    scm_puts("RX interrupt back on.\n");
+    return SCM_UNSPEC;
+}
+
 /* (rx-dropped) -> console input bytes lost because the input ring was full */
 static scm_obj p_rx_dropped(scm_obj args)
 {
@@ -304,6 +409,8 @@ static void scheme_task(void *arg)
     scm_defprim("led", p_led, 2, 2);
     scm_defprim("heap-free", p_heap_free, 0, 0);
     scm_defprim("rx-dropped", p_rx_dropped, 0, 0);
+    scm_defprim("bench-fpga-read", p_bench_fpga_read, 1, 1);
+    scm_defprim("usb-rx-probe", p_usb_rx_probe, 1, 1);
 #if INCLUDE_uxTaskGetStackHighWaterMark
     scm_defprim("stack-free", p_stack_free, 0, 0);
 #endif
