@@ -599,6 +599,9 @@ module top_tb;
         $display("== SET_ADDRESS 0x1e");
         send_usb_address_device(8'h00, 8'h1e);
 
+        $display("== debug counters: line transitions %0d, packet starts %0d, valid packets %0d, tx packets %0d",
+                 dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[15:0],  dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[31:16],
+                 dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[47:32], dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[63:48]);
         $display("== done at %0t", $time);
         $finish;
     end

@@ -63,7 +63,12 @@ module usb_fs_pe #(
   input  usb_p_rx,
   input  usb_n_rx,
 
-  output usb_tx_en
+  output usb_tx_en,
+
+  // qomu_scheme debug counters (saturating):
+  //   [15:0] line transitions, [31:16] packet starts,
+  //   [47:32] valid packets,   [63:48] transmitted packets
+  output [63:0] dbg_counters
 );
   // in pe interface
   wire [7:0] arb_in_ep_data;
@@ -96,6 +101,15 @@ module usb_fs_pe #(
 
   // sof interface
   assign sof_valid = rx_pkt_end && rx_pkt_valid && rx_pid == 4'b0101;
+
+  wire [15:0] dbg_line_toggles;
+  reg  [15:0] dbg_starts = 16'h0, dbg_valid = 16'h0, dbg_tx = 16'h0;
+  always @(posedge clk) begin
+      if (rx_pkt_start && dbg_starts != 16'hFFFF) dbg_starts <= dbg_starts + 1'b1;
+      if (rx_pkt_end && rx_pkt_valid && dbg_valid != 16'hFFFF) dbg_valid <= dbg_valid + 1'b1;
+      if (tx_pkt_start && dbg_tx != 16'hFFFF) dbg_tx <= dbg_tx + 1'b1;
+  end
+  assign dbg_counters = {dbg_tx, dbg_valid, dbg_starts, dbg_line_toggles};
   assign frame_index = rx_frame_num;
 
 
@@ -201,7 +215,8 @@ module usb_fs_pe #(
     .frame_num(rx_frame_num),
     .rx_data_put(rx_data_put),
     .rx_data(rx_data),
-    .valid_packet(rx_pkt_valid)
+    .valid_packet(rx_pkt_valid),
+    .dbg_line_toggles(dbg_line_toggles)
   );
 
   usb_fs_tx_mux usb_fs_tx_mux_inst (

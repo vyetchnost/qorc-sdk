@@ -278,6 +278,8 @@ assign usb_n_rx = usb_tx_en ? 1'b0 : usb_n_rx_int;
 assign clk_12mhz = clk_12mhz_i;
 
 // USB-Serial Bridge
+wire    [63:0]  usb_dbg_counters;   // qomu_scheme debug counters
+
 usb2m4_serial  u_usb2m4_serial  ( 
     .clk_48mhz          ( clk_48mhz_i ),
     .clk                ( clk_12mhz   ),
@@ -300,7 +302,8 @@ usb2m4_serial  u_usb2m4_serial  (
     .FIFO_m2u_empty     ( FIFO_m2u_empty     ),
     .FIFO_m2u_popflag   ( FIFO_m2u_popflag   ),
 
-    .usb_pid_i          ( usb_pid            )
+    .usb_pid_i          ( usb_pid            ),
+    .dbg_counters_o     ( usb_dbg_counters   )
 );
 
 
@@ -398,6 +401,7 @@ AL4S3B_FPGA_Registers #(
     .Interrupt_o            ( Interrupt_o           ),
     .clk_sel_o              ( clk_sel_o             ),
     .usb_pid_o              ( usb_pid               ),
+    .usb_dbg_i              ( usb_dbg_counters      ),
 
     //
     // Misc

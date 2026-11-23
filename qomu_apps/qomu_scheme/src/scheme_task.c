@@ -352,6 +352,67 @@ static scm_obj p_usb_rx_probe(scm_obj args)
     return SCM_UNSPEC;
 }
 
+/*
+ * USB core debug counters (open-toolchain gateware only; FPGA registers 0x14 /
+ * 0x18): line transitions, packet starts, valid packets, transmitted packets,
+ * each saturating at 65535. The SpDE gateware answers 0xFABDEFAC there.
+ */
+#define USB_DBG0        0x14
+#define USB_DBG1        0x18
+#define FPGA_UNDEF_REG  0xFABDEFACu
+
+static int usb_dbg_read(uint32_t *lines, uint32_t *starts, uint32_t *valid, uint32_t *tx)
+{
+    uint32_t d0 = *USB_REG(USB_DBG0), d1 = *USB_REG(USB_DBG1);
+    if (d0 == FPGA_UNDEF_REG)
+        return 0;
+    *lines = d0 & 0xffff; *starts = d0 >> 16; *valid = d1 & 0xffff; *tx = d1 >> 16;
+    return 1;
+}
+
+/*
+ * Show how far USB gets, on the LEDs, while no terminal is attached:
+ *   red solid      - D+/D- never change          (pads / input path)
+ *   red blinking   - lines toggle, no sync found  (clock recovery / timing)
+ *   green blinking - packets start, none valid    (data recovery / CRC)
+ *   green solid    - valid packets, nothing sent  (protocol engine)
+ *   blue           - the core transmits           (transmit side)
+ */
+static void usb_dbg_leds(unsigned tick)
+{
+    uint32_t lines, starts, valid, tx;
+    int blink = (tick / 4) & 1;
+    if (!usb_dbg_read(&lines, &starts, &valid, &tx)) {
+        board_led(LED_GREEN, 1);        /* SpDE gateware: plain "waiting" */
+        return;
+    }
+    board_led(LED_BLUE, tx > 0);
+    if (tx > 0)            board_led(LED_GREEN, 0);
+    else if (valid > 0)    board_led(LED_GREEN, 1);
+    else if (starts > 0)   board_led(LED_GREEN, blink);
+    else if (lines > 0)    board_led(LED_RED, blink);
+    else                   board_led(LED_RED, 1);
+}
+
+/* (usb-dbg) -> "lines starts valid tx" counter string, or #f with SpDE gateware */
+static scm_obj p_usb_dbg(scm_obj args)
+{
+    uint32_t v[4];
+    char buf[64], *p = buf;
+    int i;
+    (void)args;
+    if (!usb_dbg_read(&v[0], &v[1], &v[2], &v[3]))
+        return SCM_FALSE;
+    for (i = 0; i < 4; i++) {
+        char d[8]; int n = 0; uint32_t x = v[i];
+        do { d[n++] = (char)('0' + x % 10); x /= 10; } while (x);
+        if (i) *p++ = ' ';
+        while (n) *p++ = d[--n];
+    }
+    *p = 0;
+    return scm_from_cstr(buf);
+}
+
 /* (rx-dropped) -> console input bytes lost because the input ring was full */
 static scm_obj p_rx_dropped(scm_obj args)
 {
@@ -411,6 +472,7 @@ static void scheme_task(void *arg)
     scm_defprim("rx-dropped", p_rx_dropped, 0, 0);
     scm_defprim("bench-fpga-read", p_bench_fpga_read, 1, 1);
     scm_defprim("usb-rx-probe", p_usb_rx_probe, 1, 1);
+    scm_defprim("usb-dbg", p_usb_dbg, 0, 0);
 #if INCLUDE_uxTaskGetStackHighWaterMark
     scm_defprim("stack-free", p_stack_free, 0, 0);
 #endif
@@ -418,10 +480,18 @@ static void scheme_task(void *arg)
     board_led(LED_BLUE, 0);
     board_led(LED_GREEN, 1);
 
-    /* Print the banner once someone is typing, i.e. a terminal is open. */
-    while (!q_avail())
-        vTaskDelay(10);
+    /* Print the banner once someone is typing, i.e. a terminal is open.
+     * Meanwhile show the USB core's progress on the LEDs (see usb_dbg_leds). */
+    {
+        unsigned tick = 0;
+        while (!q_avail()) {
+            usb_dbg_leds(tick++);
+            vTaskDelay(50);
+        }
+    }
+    board_led(LED_RED, 0);
     board_led(LED_GREEN, 0);
+    board_led(LED_BLUE, 0);
 
     scm_puts("\nQomu Scheme - ");
     scm_display(scm_from_int((int64_t)scm_free_cells()));

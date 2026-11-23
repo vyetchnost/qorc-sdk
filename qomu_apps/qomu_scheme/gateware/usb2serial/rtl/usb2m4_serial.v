@@ -25,7 +25,9 @@ module usb2m4_serial (
   input         FIFO_m2u_empty        ,
   input  [3:0]  FIFO_m2u_popflag      ,
   
-  input  wire   [15:0] usb_pid_i
+  input  wire   [15:0] usb_pid_i,
+
+  output wire   [63:0] dbg_counters_o     // qomu_scheme debug counters
 );
 
  
@@ -246,7 +248,8 @@ module usb2m4_serial (
 
     // sof interface
     .sof_valid(sof_valid),
-    .frame_index(frame_index)
+    .frame_index(frame_index),
+    .dbg_counters(dbg_counters_o)
   );
 
   
