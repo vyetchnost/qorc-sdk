@@ -48,6 +48,9 @@ extern int      axFPGABitStream_length; // length of axFPGABitStream array in by
 
 extern const struct cli_cmd_entry my_main_menu[];
 extern void scheme_start_task(void);
+/* Pad setup for the open-toolchain bitstream (fpga/qomu_fpga_iomux.c, generated
+ * by gateware/usb2serial/build.sh). Weak: absent with the SpDE bitstream. */
+extern void fpga_iomux_init(void) __attribute__((weak));
 
 
 const char *SOFTWARE_VERSION_STR;
@@ -72,6 +75,8 @@ int main(void)
     S3x_Clk_Disable(S3X_FB_16_CLK);
     S3x_Clk_Enable(S3X_A1_CLK);
     S3x_Clk_Enable(S3X_CFG_DMA_A1_CLK);
+    if (fpga_iomux_init)
+        fpga_iomux_init();          // USB pads as the bitstream expects (input enabled on D+/D-)
     load_fpga(axFPGABitStream_length,(uint32_t *)axFPGABitStream);
     // Use 0x6141 as USB serial product ID (USB PID)
     HAL_usbserial_init2(false, false, 0x6141);        // Start USB serial not using interrupts
