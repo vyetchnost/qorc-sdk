@@ -54,39 +54,49 @@ static void q_putc(int c)
 }
 
 /*
- * Console input. The USB-serial core drops bytes when its 512-byte RX FIFO is
- * full; it has no flow control. A pasted block arrives in a few milliseconds
- * while the REPL may be busy evaluating, so a separate higher-priority task
- * drains the FIFO into this ring every tick, whatever the interpreter is doing.
- * Ctrl-C is handled there too: it discards pending input and raises a flag.
+ * Console input. The USB-serial core has a 512-byte RX FIFO, no flow control,
+ * and drops bytes when full. A pasted block can arrive faster than one FIFO
+ * per millisecond, so a polling task is not enough: the core's RX interrupt
+ * (FPGA interrupt 0, level-triggered while data is waiting) drains the FIFO
+ * into this ring as bytes arrive. Ctrl-C is handled in the ISR too: it
+ * discards pending input and raises a flag the interpreter checks.
  */
-static uint8_t rx_ring[SCHEME_RX_BYTES];
-static volatile uint32_t rx_head;           /* written by the pump  */
-static volatile uint32_t rx_tail;           /* written by the REPL  */
-static volatile int rx_break;
+extern volatile fpga_usbserial_regs_t *pusbserial_regs;   /* defined by the HAL */
 
-static void usb_rx_pump(void *arg)
+static uint8_t rx_ring[SCHEME_RX_BYTES];
+static volatile uint32_t rx_head;           /* written by the ISR   */
+static volatile uint32_t rx_tail;           /* written by the REPL, and the ISR on ^C */
+static volatile int rx_break;
+static volatile uint32_t rx_dropped;        /* bytes lost to a full ring */
+
+static void usb_rx_isr(void)
 {
-    (void)arg;
-    for (;;) {
-        while (HAL_usbserial_dataavailable()) {
-            uint32_t next = (rx_head + 1) % SCHEME_RX_BYTES;
-            int c;
-            if (next == rx_tail)
-                break;                      /* ring full: leave the rest in the FIFO */
-            c = HAL_usbserial_getc() & 0xff;
-            if (c == 3) {
-                taskENTER_CRITICAL();
-                rx_tail = rx_head;          /* ^C cancels everything still queued */
-                taskEXIT_CRITICAL();
-                rx_break = 1;
-                continue;
-            }
+    /* Always drain the FIFO: the interrupt is level-triggered and would
+     * re-fire forever if bytes were left behind. */
+    while (HAL_usbserial_dataavailable()) {
+        int c = HAL_usbserial_getc() & 0xff;
+        uint32_t next = (rx_head + 1) % SCHEME_RX_BYTES;
+        if (c == 3) {
+            rx_tail = rx_head;              /* ^C cancels everything still queued */
+            rx_break = 1;
+        } else if (next == rx_tail) {
+            rx_dropped++;
+        } else {
             rx_ring[rx_head] = (uint8_t)c;
             rx_head = next;
         }
-        vTaskDelay(1);
     }
+}
+
+static void usb_rx_init(void)
+{
+    FB_RegisterISR(FB_INTERRUPT_0, usb_rx_isr);
+    FB_ConfigureInterrupt(FB_INTERRUPT_0, FB_INTERRUPT_TYPE_LEVEL,
+                          FB_INTERRUPT_POL_LEVEL_HIGH,
+                          FB_INTERRUPT_DEST_AP_DISBLE, FB_INTERRUPT_DEST_M4_ENABLE);
+    NVIC_ClearPendingIRQ(FbMsg_IRQn);
+    NVIC_EnableIRQ(FbMsg_IRQn);             /* priority is set in main.c nvic_init() */
+    pusbserial_regs->u2m_fifo_int_en = 1;
 }
 
 static int q_avail(void)
@@ -102,12 +112,15 @@ static int q_getc(void)
             return 3;
         }
         if (rx_head != rx_tail) {
-            int c;
-            taskENTER_CRITICAL();
-            c = rx_ring[rx_tail];
-            rx_tail = (rx_tail + 1) % SCHEME_RX_BYTES;
+            int c = -1;
+            taskENTER_CRITICAL();           /* the ISR may flush the ring on ^C */
+            if (rx_head != rx_tail) {
+                c = rx_ring[rx_tail];
+                rx_tail = (rx_tail + 1) % SCHEME_RX_BYTES;
+            }
             taskEXIT_CRITICAL();
-            return c;
+            if (c >= 0) return c;
+            continue;
         }
         vTaskDelay(1);
     }
@@ -234,6 +247,13 @@ static scm_obj p_led(scm_obj args)
     return SCM_UNSPEC;
 }
 
+/* (rx-dropped) -> console input bytes lost because the input ring was full */
+static scm_obj p_rx_dropped(scm_obj args)
+{
+    (void)args;
+    return scm_from_int((int64_t)rx_dropped);
+}
+
 /* (heap-free) -> bytes free in the FreeRTOS heap (strings, vectors) */
 static scm_obj p_heap_free(scm_obj args)
 {
@@ -257,7 +277,7 @@ static const char board_prelude[] =
 "(define (help)\n"
 "  (display \"Qomu extras: (peek a) (poke a v) (peek8 a) (poke8 a v) (sleep ms) (ms)\\n\")\n"
 "  (display \"  (led 'red|'green|'blue on?) (blink 'blue 5 200) (gpio-write n v) (gpio-read n)\\n\")\n"
-"  (display \"  (hex n) (room) (gc) (heap-free) (stack-free)\\n\")\n"
+"  (display \"  (hex n) (room) (gc) (heap-free) (stack-free) (rx-dropped)\\n\")\n"
 "  (display \"Ctrl-C interrupts a running program; up-arrow recalls the last line.\\n\"))\n";
 
 /* ---------------------------------------------------------------- task */
@@ -283,6 +303,7 @@ static void scheme_task(void *arg)
     scm_defprim("gpio-read", p_gpio_read, 1, 1);
     scm_defprim("led", p_led, 2, 2);
     scm_defprim("heap-free", p_heap_free, 0, 0);
+    scm_defprim("rx-dropped", p_rx_dropped, 0, 0);
 #if INCLUDE_uxTaskGetStackHighWaterMark
     scm_defprim("stack-free", p_stack_free, 0, 0);
 #endif
@@ -305,10 +326,7 @@ static void scheme_task(void *arg)
 
 void scheme_start_task(void)
 {
-    /* Input pump runs above the REPL so it drains the USB FIFO every tick. */
-    if (xTaskCreate(usb_rx_pump, "UsbRx", 256, NULL,
-                    (UBaseType_t)PRIORITY_NORMAL + 1, NULL) != pdPASS)
-        board_led(LED_RED, 1);
+    usb_rx_init();
     if (xTaskCreate(scheme_task, "Scheme", SCHEME_STACK_BYTES / sizeof(StackType_t),
                     NULL, (UBaseType_t)PRIORITY_NORMAL, NULL) != pdPASS)
         board_led(LED_RED, 1);      /* not enough FreeRTOS heap for the task stack */
