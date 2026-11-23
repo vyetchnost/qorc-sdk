@@ -46,6 +46,9 @@
 #ifndef SCM_TOKEN_MAX
 #define SCM_TOKEN_MAX 256
 #endif
+#ifndef SCM_TYPEAHEAD
+#define SCM_TYPEAHEAD 256       /* input read while evaluating, kept for the reader */
+#endif
 #ifndef SCM_POLL_INTERVAL
 #define SCM_POLL_INTERVAL 512
 #endif
@@ -132,7 +135,7 @@ static unsigned gensym_counter;
 /* console input */
 static char line[SCM_LINE_MAX], prev_line[SCM_LINE_MAX];
 static int line_len, line_pos;
-static unsigned char tahead[32];
+static unsigned char tahead[SCM_TYPEAHEAD];
 static int ta_head, ta_tail;
 static int at_toplevel;
 static int last_cr;
@@ -208,19 +211,22 @@ static void check_stack(void)
 
 void scm_set_stack_limit(size_t bytes) { stack_max = bytes; }
 
+/*
+ * Look for Ctrl-C while evaluating. Other input is kept for the reader. When
+ * the typeahead buffer is full we stop reading, so further bytes wait in the
+ * device's own FIFO (and the host holds back) instead of being dropped.
+ */
 static void poll_break(void)
 {
     if (!io->avail) return;
-    while (io->avail()) {
+    while (((ta_tail + 1) % (int)sizeof tahead) != ta_head && io->avail()) {
         int c = io->getc();
         if (c == 3) {
             ta_head = ta_tail = 0;
             scm_error("interrupted", NULL);
         }
-        if (((ta_tail + 1) % (int)sizeof tahead) != ta_head) {
-            tahead[ta_tail] = (unsigned char)c;
-            ta_tail = (ta_tail + 1) % (int)sizeof tahead;
-        }
+        tahead[ta_tail] = (unsigned char)c;
+        ta_tail = (ta_tail + 1) % (int)sizeof tahead;
     }
 }
 
