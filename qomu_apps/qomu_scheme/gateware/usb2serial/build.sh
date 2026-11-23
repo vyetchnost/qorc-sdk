@@ -58,8 +58,22 @@ fi
 
 if [ "$STEP" = compile ] || [ "$STEP" = all ]; then
     echo "== compile: ql_symbiflow, package $PKG (log: $HERE/build.log)"
+    # timing constraints: use ql_symbiflow's -s if it has one, otherwise
+    # drop them into the per-build SDC file it generates and re-run P&R
+    SDCOPT=""
+    if ql_symbiflow -h 2>&1 | grep -q -- '-s '; then SDCOPT="-s ../qomu.sdc"; fi
+    echo "== compile: constraints via ${SDCOPT:-generated-file fallback}"
     ql_symbiflow -compile -d ql-eos-s3 -P "$PKG" -v $SRCS -t $TOP \
-                 -p ../qomu.pcf -dump header 2>&1 | tee "$HERE/build.log"
+                 -p ../qomu.pcf $SDCOPT -dump header 2>&1 | tee "$HERE/build.log"
+    if [ -z "$SDCOPT" ]; then
+        cp ../qomu.sdc build/${TOP}_dummy.sdc
+        rm -f build/${TOP}.net build/${TOP}.place build/${TOP}.route build/${TOP}.fasm build/${TOP}.bit
+        make -f Makefile.symbiflow build/${TOP}.bit 2>&1 | tee -a "$HERE/build.log"
+        ( cd build && symbiflow_write_bitheader -b ${TOP}.bit ) 2>&1 | tee -a "$HERE/build.log"
+        cp build/${TOP}_bit.h . 2>/dev/null || true
+    fi
+    echo "== timing (route.log):"
+    grep -A12 "Final intra-domain critical path delays" build/route.log 2>/dev/null | head -14 || true
     echo "== outputs:"
     find . -newer ../qomu.pcf \( -name '*.h' -o -name '*.bin' -o -name '*.bit' \) | head
 fi

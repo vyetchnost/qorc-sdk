@@ -74,7 +74,6 @@ module usb_fs_rx (
     packet will fail the data integrity checks.
   */
 
-  reg [2:0] line_state = 0;
   localparam  DT = 3'b100;
   localparam  DJ = 3'b010;
   localparam  DK = 3'b001;
@@ -83,30 +82,23 @@ module usb_fs_rx (
 
   wire [1:0] dpair = dpair_q[3:2];
 
+  // qomu_scheme: the original 3-bit state machine (DT/DJ/DK/SE0/SE1) is
+  // restructured for timing: it is a single-cycle loop at 48 MHz, and the open
+  // toolchain mapped it into a 5-level chain. Same behaviour:
+  //   - in DT: next state is the decoded pair    -> trans=0, pair=dpair
+  //   - in a stable state, pair changed          -> DT (trans=1)
+  //   - in a stable state, pair unchanged        -> stay
+  // and with this encoding line_state == {trans, trans ? 2'b00 : pair}.
+  reg [1:0] ls_pair  = 2'b00;   // last stable D+/D- pair
+  reg       ls_trans = 1'b0;    // 1 = transition state (DT)
+
   always @(posedge clk_48mhz) begin
-      case (line_state)
-          // if we are in a transition state, then we can sample the pair and 
-          // move to the next corresponding line state
-          DT : begin
-              case (dpair)
-                  2'b10 : line_state <= DJ;
-                  2'b01 : line_state <= DK;
-                  2'b00 : line_state <= SE0;
-                  2'b11 : line_state <= SE1;
-              endcase
-          end
-
-          // if we are in a valid line state and the value of the pair changes,
-          // then we need to move to the transition state
-          DJ  : if (dpair != 2'b10) line_state <= DT;
-          DK  : if (dpair != 2'b01) line_state <= DT;
-          SE0 : if (dpair != 2'b00) line_state <= DT;
-          SE1 : if (dpair != 2'b11) line_state <= DT;        
-
-          // if we are in an invalid state we should move to the transition state
-          default : line_state <= DT;
-      endcase
+      ls_trans <= !ls_trans && (dpair != ls_pair);
+      if (ls_trans)
+          ls_pair <= dpair;
   end
+
+  wire [2:0] line_state = ls_trans ? DT : {1'b0, ls_pair};
 
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -134,7 +126,7 @@ module usb_fs_rx (
 
   always @(posedge clk_48mhz) begin
       // keep track of phase within each bit
-      if (line_state == DT) begin
+      if (ls_trans) begin
           bit_phase <= 0;
 
       end else begin
@@ -142,12 +134,12 @@ module usb_fs_rx (
       end
 
       // added [RO 2020.05.06]: pipelined to improve timing
-      if ((bit_phase == 0) && (line_state != DT))
+      if ((bit_phase == 0) && !ls_trans)
           line_state_valid <= 1;
       else
           line_state_valid <= 0;
 
-      if ((bit_phase == 1) && (line_state != DT))
+      if ((bit_phase == 1) && !ls_trans)
           bit_strobe <= 1;
       else
           bit_strobe <= 0;
@@ -167,6 +159,15 @@ module usb_fs_rx (
   reg packet_valid = 0;
   reg next_packet_valid;
   wire packet_start = next_packet_valid && !packet_valid;
+
+  // qomu_scheme: registered copy for the ~40 register resets below (CRC5,
+  // CRC16, PID, token payload, data buffer), taking that fan-out off the
+  // single-cycle path. The first bit that shifts into any of them comes at
+  // least a bit time later (dvalid_* need packet_valid, itself registered),
+  // so resetting one 48 MHz cycle later is equivalent.
+  reg packet_start_q = 1'b0;
+  always @(posedge clk_48mhz)
+      packet_start_q <= packet_start;
   wire packet_end = !next_packet_valid && packet_valid;
 
   always @* begin
@@ -298,7 +299,13 @@ always @(posedge clk_48mhz) begin
     end  
   end
 
-  wire dvalid = dvalid_raw && !(bitstuff_history == 6'b111111);
+  // qomu_scheme: registered "six ones" flag (timing). bitstuff_history only
+  // changes on line_state_valid strobes, which are several cycles apart, and
+  // dvalid is only used together with line_state_valid, so this is equivalent.
+  reg bitstuff_six = 1'b0;
+  always @(posedge clk_48mhz)
+      bitstuff_six <= (bitstuff_history == 6'b111111);
+  wire dvalid = dvalid_raw && !bitstuff_six;
  
 ///// added [Rakesh M 2020.05.07]: add pipelining	
   reg dvalid_pid ;
@@ -359,7 +366,7 @@ always @(posedge clk_48mhz) begin
   assign pid_complete = full_pid[0];
 
   always @(posedge clk_48mhz) begin
-    if (packet_start) begin
+    if (packet_start_q) begin
       full_pid <= 9'b100000000;
     end
 
@@ -376,7 +383,7 @@ always @(posedge clk_48mhz) begin
   wire crc5_valid = crc5 == 5'b01100;
   wire crc5_invert = din ^ crc5[4];
   always @(posedge clk_48mhz) begin
-    if (packet_start) begin
+    if (packet_start_q) begin
       crc5 <= 5'b11111;
     end
 	
@@ -398,7 +405,7 @@ always @(posedge clk_48mhz) begin
   wire crc16_invert = din ^ crc16[15];  
 
   always @(posedge clk_48mhz) begin
-    if (packet_start) begin
+    if (packet_start_q) begin
       crc16 <= 16'b1111111111111111;
     end
 	
@@ -446,7 +453,7 @@ always @(posedge clk_48mhz) begin
   wire token_payload_done = token_payload[0];
 
   always @(posedge clk_48mhz) begin
-    if (packet_start) begin
+    if (packet_start_q) begin
       token_payload <= 12'b100000000000;
     end
 	
@@ -500,7 +507,7 @@ always @(posedge clk_48mhz) begin
   );
 
   always @(posedge clk_48mhz) begin
-    if (packet_start || rx_data_buffer_full) begin
+    if (packet_start_q || rx_data_buffer_full) begin
       rx_data_buffer <= 9'b100000000;
     end
 

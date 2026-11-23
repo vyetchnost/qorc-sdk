@@ -18,6 +18,11 @@ Changes from the s3-gateware RTL (commit 2f8fed6):
 - `usb_fs_rx.v`: `dvalid_tkn` / `dvalid_data` assigned with `<=` instead of `=`
   inside clocked blocks (an upstream race that made simulation clock each bit twice).
 - `r512x8_512x8.v`: uses the native 1024x8 shape of the 8 Kbit block.
+- `usb_fs_rx.v`: line-state recovery restructured (pair + transition flag)
+  and the bit-stuff check registered, so the single-cycle 48 MHz paths are
+  shallow; packet-start resets driven from a registered copy (fan-out off
+  the single-cycle path); behaviour unchanged.
+- `qomu.sdc`: 48 MHz / 12 MHz clock constraints for timing-driven place and route.
 - `qomu.pcf`: Qomu pins, from the schematic: D+ FBIO_31/E4, D- FBIO_28/F3,
   pull-up control FBIO_23/E2.
 
