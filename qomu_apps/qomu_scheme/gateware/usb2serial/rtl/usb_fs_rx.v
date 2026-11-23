@@ -105,7 +105,7 @@ module usb_fs_rx (
 
   initial dbg_line_toggles = 16'h0;
   always @(posedge clk_48mhz)
-      if (ls_trans && dbg_line_toggles != 16'hFFFF)
+      if (ls_trans && !dbg_line_toggles[15])   // saturate at 0x8000 (cheap)
           dbg_line_toggles <= dbg_line_toggles + 1'b1;
 
 

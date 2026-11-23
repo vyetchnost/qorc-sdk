@@ -233,11 +233,13 @@ module usb_fs_pe #(
     .tx_pid(tx_pid)
   );
 
+  // Qomu port: transmitter runs on the 12 MHz clock, one bit per clock
+  // (see USB_TX_12MHZ in usb_fs_tx.v).
   usb_fs_tx usb_fs_tx_inst (
-    .clk_48mhz(clk_48mhz),
+    .clk_48mhz(clk),
     .clk(clk),
     .reset(reset),
-    .bit_strobe(bit_strobe),
+    .bit_strobe(1'b1),
     .oe(usb_tx_en),
     .dp(usb_p_tx),
     .dn(usb_n_tx),

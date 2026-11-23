@@ -1,3 +1,4 @@
+`define USB_TX_12MHZ
 module usb_fs_tx (
   // A 48MHz clock is required to receive USB data at 12MHz
   // it's simpler to juse use 48MHz everywhere
@@ -39,6 +40,18 @@ module usb_fs_tx (
     //pragma attribute pkt_start_48_dup3 preserve_signal true
 
   wire [3:0] pidq;
+`ifdef USB_TX_12MHZ
+  // Qomu open-toolchain port: the whole transmitter is clocked by the 12 MHz
+  // protocol clock (one bit per clock), so no clock crossing is needed and
+  // every path gets a full 83 ns instead of 20.8 ns.
+  reg [3:0] pid_r = 0;
+  always @(posedge clk_48mhz) if (pkt_start) pid_r <= pid;
+  assign pidq = pid_r;
+  assign pkt_start_48 = pkt_start;
+  assign pkt_start_48_dup1 = pkt_start;
+  assign pkt_start_48_dup2 = pkt_start;
+  assign pkt_start_48_dup3 = pkt_start;
+`else
   //strobe #(.WIDTH(4)) pkt_start_strobe(
   strobe_out4 #(.WIDTH(4)) pkt_start_strobe(
 	clk, clk_48mhz,
@@ -48,9 +61,14 @@ module usb_fs_tx (
     pkt_start_48_dup3,
 	pid, pidq
   );
+`endif
 
   wire tx_data_avail_48;
+`ifdef USB_TX_12MHZ
+  assign tx_data_avail_48 = tx_data_avail;
+`else
   dflip tx_data_avail_buffer(clk_48mhz, tx_data_avail, tx_data_avail_48);
+`endif
   //wire tx_data_avail_48 = tx_data_avail;
 
   // convert tx_data_get from 48 to clk
@@ -59,12 +77,16 @@ module usb_fs_tx (
   initial begin
     tx_data_get_48 = 0;
   end
+`ifdef USB_TX_12MHZ
+  assign tx_data_get = tx_data_get_48;
+`else
   strobe tx_data_get_strobe(
 	.clk_in(clk_48mhz),
 	.clk_out(clk),
 	.strobe_in(tx_data_get_48),
 	.strobe_out(tx_data_get)
   );
+`endif
 
   reg [7:0] data_shift_reg = 0;
   reg [7:0] oe_shift_reg = 0;
@@ -77,12 +99,17 @@ module usb_fs_tx (
 
 
   // serialize sync, pid, data payload, and crc16
-  reg byte_strobe = 0;
   reg [2:0] bit_count = 0;
 
   reg [4:0] bit_history_q = 0;
   wire [5:0] bit_history = {serial_tx_data, bit_history_q};
   wire bitstuff = bit_history == 6'b111111;
+`ifdef USB_TX_12MHZ
+  // one bit per clock: the byte boundary is the same cycle as the last bit
+  wire byte_strobe = bit_strobe && !bitstuff && (bit_count == 3'b000);
+`else
+  reg byte_strobe = 0;
+`endif
   reg bitstuff_q = 0;
   reg bitstuff_qq = 0;
   reg bitstuff_qqq = 0;
@@ -97,16 +124,22 @@ module usb_fs_tx (
   end
 
   wire pkt_end_48 = bit_strobe && se0_shift_reg[1:0] == 2'b01;
+`ifdef USB_TX_12MHZ
+  reg pkt_end_r = 0;
+  always @(posedge clk_48mhz) pkt_end_r <= pkt_end_48;
+  assign pkt_end = pkt_end_r;
+`else
   strobe  pkt_end_strobe(
 	.clk_in(clk_48mhz),
 	.clk_out(clk),
 	.strobe_in(pkt_end_48),
 	.strobe_out(pkt_end)
   );
+`endif
 
   reg data_payload = 0;
 
-  reg [31:0] pkt_state = 0;
+  reg [2:0] pkt_state = 0;   // was [31:0]
   localparam IDLE = 0;
   localparam SYNC = 1;
   localparam PID = 2;
@@ -115,6 +148,20 @@ module usb_fs_tx (
   localparam EOP = 5;
 
   reg [15:0] crc16 = 0;
+  wire crc16_invert = serial_tx_data ^ crc16[15];  
+`ifdef USB_TX_12MHZ
+  wire bitstuff_prev = bitstuff_q;      // previous bit (1 clock)
+`else
+  wire bitstuff_prev = bitstuff_qqqq;   // previous bit (4 clocks at 48 MHz)
+`endif
+  wire crc16_step = bit_strobe && data_payload && !bitstuff_prev && !pkt_start_48_dup2;
+  wire [15:0] crc16_next = crc16_step ?
+      { crc16[14] ^ crc16_invert, crc16[13:2], crc16[1] ^ crc16_invert, crc16[0], crc16_invert } : crc16;
+`ifdef USB_TX_12MHZ
+  wire [15:0] crc16_out = crc16_next;   // last data bit is folded in this same cycle
+`else
+  wire [15:0] crc16_out = crc16;
+`endif
 
   always @(posedge clk_48mhz) begin
     case (pkt_state)
@@ -160,7 +207,7 @@ module usb_fs_tx (
             pkt_state <= CRC16_1;
             data_payload <= 0;
             tx_data_get_48 <= 0;
-            data_shift_reg <= ~{crc16[8], crc16[9], crc16[10], crc16[11], crc16[12], crc16[13], crc16[14], crc16[15]};
+            data_shift_reg <= ~{crc16_out[8], crc16_out[9], crc16_out[10], crc16_out[11], crc16_out[12], crc16_out[13], crc16_out[14], crc16_out[15]};
             oe_shift_reg <= 8'b11111111;
             se0_shift_reg <= 8'b00000000;
           end
@@ -187,11 +234,13 @@ module usb_fs_tx (
       end
     endcase
 
+`ifndef USB_TX_12MHZ
     if (bit_strobe && !bitstuff) begin
       byte_strobe <= (bit_count == 3'b000);
     end else begin
       byte_strobe <= 0;
     end
+`endif
 
     //if (pkt_start_48) begin
     if (pkt_start_48_dup1) begin
@@ -208,9 +257,15 @@ module usb_fs_tx (
       end else begin
         bit_count <= bit_count + 1;
 
+`ifdef USB_TX_12MHZ
+        if (!(byte_strobe && pkt_state != IDLE)) begin   // else the case above loads
+`else
+        begin
+`endif
         data_shift_reg <= (data_shift_reg >> 1);
         oe_shift_reg <= (oe_shift_reg >> 1);
         se0_shift_reg <= (se0_shift_reg >> 1);
+        end
 
         bit_history_q <= bit_history[5:1];
       end
@@ -220,7 +275,6 @@ module usb_fs_tx (
 
 
   // calculate crc16
-  wire crc16_invert = serial_tx_data ^ crc16[15];  
 
   always @(posedge clk_48mhz) begin
     //if (pkt_start_48) begin
@@ -229,7 +283,7 @@ module usb_fs_tx (
     end
 
     //if (bit_strobe && data_payload && !bitstuff_qqqq && !pkt_start_48) begin
-    if (bit_strobe && data_payload && !bitstuff_qqqq && !pkt_start_48_dup2) begin
+    if (crc16_step) begin
       crc16[15] <= crc16[14] ^ crc16_invert;
       crc16[14] <= crc16[13];
       crc16[13] <= crc16[12];
