@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Qomu Scheme: from question to REPL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Same visual system as "Qomu App Anatomy.html". */
+:root {
+  --bg: #f4f6f4; --surface: #ffffff; --fg: #18211d; --muted: #5a6761; --line: #d3dad6;
+  --accent: #0f6e5a; --fabric: #a8620a; --host: #3a5aa0; --danger: #b3362d;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111715; --surface: #18201d; --fg: #e2eae6; --muted: #93a29b; --line: #2b3632;
+    --accent: #45c2a0; --fabric: #e2a447; --host: #8ea8ea; --danger: #ec7a70;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15.5px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 64px;
+}
+.wrap { max-width: 900px; margin: 0 auto; display: grid; gap: 56px; }
+.prose { max-width: 66ch; display: grid; gap: 12px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 2.8rem); font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 1.55rem; font-weight: 600; }
+h3 { font-size: 1.1rem; font-weight: 600; }
+p { margin: 0; }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+code { background: color-mix(in srgb, var(--accent) 9%, transparent); padding: 0.05em 0.35em; border-radius: 3px; }
+pre { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.55; }
+pre code { background: none; padding: 0; font-size: 1em; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.muted { color: var(--muted); }
+section { display: grid; gap: 18px; }
+.head { display: grid; gap: 8px; }
+header { display: grid; gap: 14px; }
+header .lede { font-size: 1.1rem; max-width: 62ch; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin-top: 8px; }
+.fact { background: var(--surface); padding: 14px 16px; display: grid; gap: 4px; align-content: start; min-width: 0; }
+.fact b { font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; }
+.fact span { font-size: 0.88rem; color: var(--muted); line-height: 1.45; }
+.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 18px; }
+.figure svg { display: block; width: 100%; min-width: 640px; height: auto; }
+.cap { font-size: 0.86rem; color: var(--muted); }
+.box { fill: var(--surface); stroke: var(--line); stroke-width: 1.25; }
+.box.fw { stroke: var(--accent); }
+.box.fab { stroke: var(--fabric); }
+.box.host { stroke: var(--host); }
+.box.app { fill: color-mix(in srgb, var(--accent) 13%, var(--surface)); stroke: var(--accent); stroke-width: 1.75; }
+.wire { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.head-mk { fill: var(--muted); }
+.t-title { font-family: var(--font-display); font-weight: 600; font-size: 14.5px; fill: var(--fg); }
+.t-sub { font-family: var(--font-body); font-size: 11.5px; fill: var(--muted); }
+.t-code { font-family: var(--font-mono); font-size: 11px; fill: var(--fg); }
+.t-tag { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+.t-fab { fill: var(--fabric); } .t-host { fill: var(--host); }
+.strip { display: flex; min-width: 640px; height: 58px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg { display: flex; flex-direction: column; justify-content: center; padding: 0 6px; border-right: 1px solid var(--bg); font-size: 11px; line-height: 1.25; min-width: 0; overflow: hidden; white-space: nowrap; }
+.seg:last-child { border-right: 0; }
+.seg b { font-family: var(--font-display); font-size: 12.5px; font-weight: 600; }
+.seg span { font-family: var(--font-mono); font-size: 10px; opacity: 0.85; }
+.seg.fw  { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
+.seg.fwa { background: var(--accent); color: var(--surface); }
+.seg.fab { background: color-mix(in srgb, var(--fabric) 24%, var(--surface)); }
+.seg.meta { background: color-mix(in srgb, var(--muted) 18%, var(--surface)); }
+.strip-label { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); margin: 10px 0 6px; }
+.ticks { display: flex; min-width: 640px; justify-content: space-between; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+td.num { font-family: var(--font-mono); font-size: 0.84rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tbl { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; }
+.tbl table { min-width: 560px; }
+.tbl tr:last-child td { border-bottom: 0; }
+.chip { display: inline-block; font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.04em; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.chip.ok { color: var(--accent); }
+.chip.bug { color: var(--danger); }
+.chip.host { color: var(--host); }
+.chip.fpga { color: var(--fabric); }
+.stack { list-style: none; margin: 0; padding: 0; display: grid; }
+.stack li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 11px 0; position: relative; }
+.stack li::before { content: ""; position: absolute; left: 10px; top: 0; bottom: 0; width: 2px; background: var(--line); }
+.stack li:first-child::before { top: 22px; }
+.stack li:last-child::before { bottom: calc(100% - 22px); }
+.dot { width: 12px; height: 12px; border-radius: 50%; margin: 6px 0 0 5px; position: relative; z-index: 1; border: 2px solid var(--bg); box-sizing: content-box; background: var(--accent); }
+.dot.bug { background: var(--danger); } .dot.host { background: var(--host); } .dot.win { background: var(--fabric); }
+.stack .what { display: grid; gap: 2px; min-width: 0; }
+.stack .what b { font-family: var(--font-display); font-weight: 600; font-size: 1.02rem; }
+.stack .what span { color: var(--muted); font-size: 0.92rem; }
+.stack .when { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); padding-top: 3px; font-variant-numeric: tabular-nums; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.card ul { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; font-size: 0.92rem; }
+.gotchas { display: grid; border-top: 1px solid var(--line); }
+.gotcha { display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); gap: 8px 24px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.gotcha h3 { font-size: 1.02rem; }
+.gotcha .body { display: grid; gap: 8px; }
+.gotcha .fix { font-size: 0.92rem; }
+.gotcha .fix b { color: var(--accent); font-weight: 600; }
+@media (max-width: 640px) { .gotcha { grid-template-columns: 1fr; } }
+ol.todo { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; max-width: 66ch; }
+footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">qorc-sdk · Qomu · EOS S3 · 22 Nov 2026</div>
+  <h1>Qomu Scheme: from question to REPL</h1>
+  <p class="lede">How a Scheme interpreter went from "do you think we can?" to a working prompt on the Qomu's USB-serial console in one morning: what we built, how it fits into the SDK, and every bug we hit on the way to the first <code>&gt;</code>.</p>
+  <div class="facts">
+    <div class="fact"><b>Written from scratch</b><span>A ~2,400-line portable C99 interpreter. TinyScheme wasn't reachable from the sandbox, so we wrote our own.</span></div>
+    <div class="fact"><b>Built on helloworld</b><span>Same USB-serial gateware and FreeRTOS startup. The CLI task is replaced by a Scheme task.</span></div>
+    <div class="fact"><b>~25 KB of code</b><span>4,096 cells of 12 bytes. The base system uses ~1,000; 3,077 are free at the prompt.</span></div>
+    <div class="fact"><b>0 failures on hardware</b><span>The regression suite passes on the board, after 137 tests passed on the host under ASan, UBSan and a GC-every-allocation stress mode.</span></div>
+  </div>
+</header>
+
+<!-- Timeline -->
+<section>
+  <div class="head">
+    <div class="eyebrow">Sunday morning, Mountain time</div>
+    <h2>How it went</h2>
+  </div>
+  <ul class="stack">
+    <li><div class="dot host"></div><div class="what"><b>The question</b><span>Can a Scheme REPL run on the EOS S3's Cortex-M4F? 512 KB SRAM and 80 MHz say yes; the catch is that USB lives in the eFPGA.</span></div><div class="when">05:34</div></li>
+    <li><div class="dot"></div><div class="what"><b>Decision: build on qomu_helloworldsw</b><span>Its USB-serial gateware and console driver are the hard part. FreeRTOS costs ~10–20 KB, which is negligible.</span></div><div class="when">05:39</div></li>
+    <li><div class="dot host"></div><div class="what"><b>Workspace</b><span>The Mac copy of qorc-sdk is linked as a reference checkout. Builds happen on the Pi 4 (64-bit Trixie, Arm GNU 15.3 aarch64 toolchain) and the two sync through GitHub.</span></div><div class="when">05:58</div></li>
+    <li><div class="dot"></div><div class="what"><b>Interpreter written and tested on the host</b><span>137 regression tests, a GC-on-every-allocation stress run under ASan/UBSan, the Ctrl-C path, and a clang build for <code>thumbv7em</code> confirming 12-byte cells.</span></div><div class="when">~06:20</div></li>
+    <li><div class="dot"></div><div class="what"><b>qomu_apps/qomu_scheme created</b><span>A copy of helloworld plus <code>scheme.c</code>, <code>scheme_task.c</code> and two headers. <code>main()</code> calls <code>scheme_start_task()</code> instead of <code>CLI_start_task()</code>.</span></div><div class="when">06:24</div></li>
+    <li><div class="dot bug"></div><div class="what"><b>Make 4.4 breaks config.mk</b><span><code>$(word 0,…)</code>: exported <code>$(shell pwd)</code> evaluates empty under the newer Make.</span></div><div class="when">06:26</div></li>
+    <li><div class="dot bug"></div><div class="what"><b>Link: rom overflowed by 424 bytes</b><span>Fixed with a <code>const</code> bitstream and a 32 KB boundary shift. The image is 160,168 bytes.</span></div><div class="when">06:28</div></li>
+    <li><div class="dot"></div><div class="what"><b>Built and flashed</b><span><code>qfprog --m4app … --mode m4</code>. The board enumerates as <code>1d50:6141</code>, the app's product ID.</span></div><div class="when">06:44</div></li>
+    <li><div class="dot bug"></div><div class="what"><b>Silent console</b><span>LED checkpoints show it's stuck printing the banner: USB TX blocks forever when nobody is reading.</span></div><div class="when">07:06</div></li>
+    <li><div class="dot bug"></div><div class="what"><b>"recursion too deep" at the banner</b><span>Unsigned arithmetic in the stack-depth check wrapped a negative depth into a huge one.</span></div><div class="when">07:11</div></li>
+    <li><div class="dot win"></div><div class="what"><b>First prompt</b><span><code>Qomu Scheme - 3084 cells free.</code> LEDs, timing, recursion and Ctrl-C all work.</span></div><div class="when">07:17</div></li>
+    <li><div class="dot win"></div><div class="what"><b>Regression suite on hardware</b><span><code>tests: 195, failures: 0</code>. The count is above 137 because some chunks were pasted twice.</span></div><div class="when">09:31</div></li>
+  </ul>
+</section>
+
+<!-- Architecture -->
+<section>
+  <div class="head">
+    <div class="eyebrow">What runs where</div>
+    <h2>Architecture</h2>
+  </div>
+  <div class="figure scroll">
+    <svg viewBox="0 0 720 420" role="img" aria-label="Layers from the USB host through the eFPGA USB-serial core to the Scheme task and interpreter core">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path class="head-mk" d="M0,0 L10,5 L0,10 z"/>
+        </marker>
+      </defs>
+      <!-- Host -->
+      <rect class="box host" x="200" y="8" width="320" height="52" rx="6"/>
+      <text class="t-title" x="360" y="30" text-anchor="middle">Terminal on the Pi</text>
+      <text class="t-sub" x="360" y="48" text-anchor="middle">screen /dev/ttyACM0 · cdc_acm · 1d50:6141</text>
+      <line class="wire" x1="360" y1="60" x2="360" y2="86" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <text class="t-tag t-host" x="372" y="78">USB full-speed</text>
+      <!-- FPGA -->
+      <rect class="box fab" x="200" y="88" width="320" height="52" rx="6"/>
+      <text class="t-title" x="360" y="110" text-anchor="middle">USB-serial core in the eFPGA</text>
+      <text class="t-sub" x="360" y="128" text-anchor="middle">loaded by main() via load_fpga() · RX/TX FIFOs, no IRQ</text>
+      <line class="wire" x1="360" y1="140" x2="360" y2="166" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <text class="t-tag t-fab" x="372" y="158">HAL_usbserial_getc/putc · FIFO flags</text>
+      <!-- Task -->
+      <rect class="box fw" x="120" y="168" width="480" height="96" rx="6"/>
+      <text class="t-title" x="360" y="190" text-anchor="middle">scheme_task.c · FreeRTOS task, 20 KB stack</text>
+      <text class="t-code" x="360" y="212" text-anchor="middle">q_getc: poll + vTaskDelay(1) · q_putc: drop after 100 ms full</text>
+      <text class="t-code" x="360" y="230" text-anchor="middle">peek · poke · sleep · ms · led · gpio-read/write · heap-free</text>
+      <text class="t-code" x="360" y="248" text-anchor="middle">48 KB static cell heap · banner after first keypress</text>
+      <line class="wire" x1="360" y1="264" x2="360" y2="290" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <text class="t-tag" x="372" y="282">scm_io { putc, getc, avail, tty }</text>
+      <!-- Core -->
+      <rect class="box app" x="120" y="292" width="480" height="120" rx="6"/>
+      <text class="t-title" x="360" y="314" text-anchor="middle">scheme.c · portable interpreter core</text>
+      <text class="t-code" x="360" y="336" text-anchor="middle">line editor (echo, backspace, ^U, up-arrow, ^C) · reader · printer</text>
+      <text class="t-code" x="360" y="354" text-anchor="middle">eval with proper tail calls · define-macro · quasiquote</text>
+      <text class="t-code" x="360" y="372" text-anchor="middle">mark/sweep GC · gc root stack · bounded mark stack</text>
+      <text class="t-code" x="360" y="390" text-anchor="middle">~160 primitives + Scheme prelude (do, while, dotimes, delay)</text>
+      <text class="t-tag" x="612" y="356">no board code;</text>
+      <text class="t-tag" x="612" y="371">builds on the host</text>
+    </svg>
+  </div>
+  <p class="cap">The core knows nothing about the board. Everything Qomu-specific lives in <code>scheme_task.c</code> and <code>scheme_port.h</code>, so the same <code>scheme.c</code> runs on a laptop for testing.</p>
+</section>
+
+<!-- Interpreter design -->
+<section>
+  <div class="head">
+    <div class="eyebrow">scheme.c</div>
+    <h2>Interpreter design</h2>
+  </div>
+  <div class="cols">
+    <div class="card">
+      <h3>Objects</h3>
+      <ul>
+        <li>12-byte cells on the M4: type, mark, 16-bit aux, 8-byte union.</li>
+        <li>31-bit integers are immediate (low bit set) and never allocate.</li>
+        <li>Larger integers are boxed <code>int64</code>, so register addresses like <code>#xE000E010</code> work; overflow falls back to float.</li>
+        <li>Floats are single precision, to use the M4F's FPU.</li>
+        <li>String and vector bodies come from <code>pvPortMalloc</code> and are freed by the GC.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Memory</h3>
+      <ul>
+        <li>Mark/sweep over a caller-supplied cell array.</li>
+        <li>Every new cell is pushed onto a GC root stack, so C temporaries are always safe; each eval frame trims the stack when it finishes.</li>
+        <li>Marking uses a bounded explicit stack with an overflow rescan, so deep data can't blow the C stack.</li>
+        <li>Verified by running the suite with a GC on <em>every</em> allocation and freed cells poisoned.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Evaluator</h3>
+      <ul>
+        <li>Walks the source tree directly, with tail calls through <code>if</code>/<code>cond</code>/<code>case</code>/<code>and</code>/<code>or</code>/<code>let*</code>/named <code>let</code>/bodies.</li>
+        <li>Global variables live in the symbol; local frames are association lists.</li>
+        <li>Macro expansions are memoized by rewriting the call site.</li>
+        <li>Non-tail recursion is capped by a C-stack budget (17 KB) and the root stack (1,024 entries); both come to about 150 levels.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Errors and the console</h3>
+      <ul>
+        <li>Errors <code>longjmp</code> back to the REPL, with the offending value printed and truncated.</li>
+        <li>Ctrl-C is polled every 512 evals; other keys typed meanwhile are kept as typeahead.</li>
+        <li>No libc <code>printf</code>: integers and floats are formatted by our own code, since newlib-nano drops <code>%lld</code> and <code>%f</code>.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="prose muted">Language: <code>quote</code> <code>quasiquote</code> <code>lambda</code> <code>define</code> <code>set!</code> <code>if</code> <code>cond</code> (with <code>=&gt;</code>) <code>case</code> <code>and</code> <code>or</code> <code>when</code> <code>unless</code> <code>let</code> <code>let*</code> <code>letrec</code> <code>begin</code> <code>define-macro</code>, plus <code>do</code> <code>while</code> <code>dotimes</code> <code>delay</code> as library macros. Not supported: continuations, rationals and ports.</p>
+</section>
+
+<!-- Memory layout -->
+<section>
+  <div class="head">
+    <div class="eyebrow">qomu.ld · SRAM, to scale</div>
+    <h2>Memory layout change</h2>
+  </div>
+  <p class="prose">The first link overflowed <code>rom</code>, the region that holds code plus the initial values for <code>.data</code>. That included the 76 KB FPGA bitstream, which was a writable array, so it occupied both <code>rom</code> and RAM. Making it <code>const</code> freed the RAM copy, and that RAM paid for moving the boundary up 32 KB.</p>
+  <div class="figure">
+    <div class="scroll">
+      <div class="strip-label">helloworld</div>
+      <div class="strip" role="img" aria-label="Original layout: rom 156K, ram 242K">
+        <div class="seg fw"   style="width:30.47%"><b>rom</b><span>156K · 0x00000</span></div>
+        <div class="seg meta" style="width:47.27%"><b>ram</b><span>242K · 0x20027000 (bitstream copy 76K here)</span></div>
+        <div class="seg fab"  style="width:22.27%"><b>spiram · HWA · shm</b><span>114K</span></div>
+      </div>
+      <div class="strip-label">qomu_scheme</div>
+      <div class="strip" role="img" aria-label="New layout: rom 188K, ram 210K">
+        <div class="seg fwa"  style="width:36.72%"><b>rom</b><span>188K · 0x00000</span></div>
+        <div class="seg meta" style="width:41.01%"><b>ram</b><span>210K · 0x2002F000 (no bitstream copy)</span></div>
+        <div class="seg fab"  style="width:22.27%"><b>spiram · HWA · shm</b><span>114K</span></div>
+      </div>
+      <div class="ticks"><span>0x00000</span><span>0x20000</span><span>0x40000</span><span>0x60000</span><span>0x80000</span></div>
+    </div>
+  </div>
+  <p class="cap">This is safe because the bootloader accepts M4 images up to 440 KB, and it stages the first 64 KB near the top of SRAM, above everything here. <code>ram</code> still ends at <code>0x20063800</code>, so the main stack didn't move. Net RAM change: about 44 KB gained.</p>
+</section>
+
+<!-- Bugs -->
+<section>
+  <div class="head">
+    <div class="eyebrow">Between "it compiles" and "&gt;"</div>
+    <h2>What broke, and why</h2>
+  </div>
+  <div class="gotchas">
+    <div class="gotcha">
+      <h3>config.mk:145 — first argument to 'word' must be greater than 0 <span class="chip host">build host</span></h3>
+      <div class="body">
+        <p>GNU Make 4.4 (Trixie) now passes exported variables to <code>$(shell …)</code> commands. <code>export PROJ_DIR=$(shell pwd)</code> is evaluated every time it's used and comes out empty, which leaves <code>PROJ_NAME</code> empty. Bookworm's Make 4.3 didn't do this.</p>
+        <p class="fix"><b>Fix:</b> <code>export PROJ_DIR:=$(shell pwd)</code>, so it's evaluated once. Every other app's <code>config.mk</code> has the same line and will hit the same error.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>region 'rom' overflowed by 424 bytes <span class="chip fpga">linker</span></h3>
+      <div class="body">
+        <p>About 30 KB of interpreter pushed the image (160,168 bytes) past the 156 KB code region. The <code>_fstat</code>/<code>_kill</code> warnings next to it are harmless newlib stubs.</p>
+        <p class="fix"><b>Fix:</b> make <code>axFPGABitStream</code> <code>const</code> (cast where it's passed to <code>load_fpga()</code>, which reads it with plain CPU loads), and move the <code>rom</code>/<code>ram</code> boundary from <code>0x27000</code> to <code>0x2F000</code>.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>Enumerates, but the console is silent <span class="chip bug">firmware</span></h3>
+      <div class="body">
+        <p><code>HAL_usbserial_putc()</code> busy-waits for room in the TX FIFO, and the FIFO only drains while the host has the port open. At boot nobody is reading, so the banner filled the FIFO and the task never reached the code that reads keys. LED checkpoints pinned it down: green stayed on.</p>
+        <p class="fix"><b>Fix:</b> <code>q_putc</code> waits up to 100 ms, then drops output until the FIFO drains. The banner prints after the first keypress.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>Error: recursion too deep — printing the banner <span class="chip bug">interpreter</span></h3>
+      <div class="body">
+        <p>The stack-depth check records a base address the first time Scheme code runs. On the board that's the prelude, deep inside <code>scm_init()</code>. The banner was printed from higher up the stack, the depth came out negative, and <code>(size_t)</code> wrapped it to a huge value. The host tests never printed from above the base.</p>
+        <p class="fix"><b>Fix:</b> a signed comparison, and keep the shallowest entry point as the base. A host test now reproduces the board's startup.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>A fix that didn't reach the checkout <span class="chip host">workflow</span></h3>
+      <div class="body">
+        <p>The file-copy tool briefly wrote the previous <code>scheme.c</code>; <code>git status</code> was clean and the size hadn't changed. Caught because Andrey checked.</p>
+        <p class="fix"><b>Fix:</b> applied in place and compared byte for byte with the tested version. Every write is now verified in the checkout.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>Junk at the first prompt: <code>##############QScV qp</code> <span class="chip host">host tty</span></h3>
+      <div class="body">
+        <p>The boot banner from <code>main()</code> is echoed back by the Linux tty before <code>screen</code> switches the port to raw mode, and the reader parses it as input. Harmless.</p>
+        <p class="fix"><b>Planned:</b> discard input that arrives before the first real keypress, or drop the boot banner.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Measurements -->
+<section>
+  <div class="head">
+    <div class="eyebrow">On the board</div>
+    <h2>First measurements</h2>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Check</th><th>Result</th><th>Reading</th></tr></thead>
+      <tbody>
+        <tr><td><code>(room)</code></td><td class="num">(3077 4096)</td><td>Free and total cells. The base system takes ~1,000.</td></tr>
+        <tr><td><code>(stack-free)</code></td><td class="num">15996</td><td>Bytes of the 20 KB task stack never touched. There's room to shrink it.</td></tr>
+        <tr><td><code>(heap-free)</code></td><td class="num">30632</td><td>FreeRTOS heap left for strings and vectors.</td></tr>
+        <tr><td><code>(fib 20)</code></td><td class="num">6765 · 3–4 s</td><td>21,891 calls, ~160 µs each. The M4 runs at 48 MHz (C10, frequency scaling policy 1), so ~7,700 cycles per call: slower than it should be.</td></tr>
+        <tr><td><code>(let loop () (loop))</code> + Ctrl-C</td><td class="num">Error: interrupted</td><td>Interrupt polling works.</td></tr>
+        <tr><td><code>(blink 'blue 3 200)</code></td><td class="num">#f</td><td>Blinks correctly. The <code>#f</code> comes from the <code>do</code> macro and is cosmetic.</td></tr>
+        <tr><td><code>tests.scm</code></td><td class="num">failures: 0</td><td>The full suite on hardware, pasted in chunks.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Files -->
+<section>
+  <div class="head">
+    <div class="eyebrow">qomu_apps/qomu_scheme</div>
+    <h2>Files</h2>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>File</th><th>Status</th><th>What</th></tr></thead>
+      <tbody>
+        <tr><td><code>src/scheme.c</code>, <code>inc/scheme.h</code></td><td><span class="chip ok">new</span></td><td>Portable interpreter core and its API</td></tr>
+        <tr><td><code>inc/scheme_port.h</code></td><td><span class="chip ok">new</span></td><td>FreeRTOS malloc hooks, root-stack and line-length sizes</td></tr>
+        <tr><td><code>src/scheme_task.c</code></td><td><span class="chip ok">new</span></td><td>USB console I/O, board primitives, the task, temporary LED checkpoints</td></tr>
+        <tr><td><code>tests.scm</code>, <code>README.rst</code></td><td><span class="chip ok">new</span></td><td>Regression suite; build, sizing and language notes</td></tr>
+        <tr><td><code>src/main.c</code></td><td><span class="chip host">changed</span></td><td><code>scheme_start_task()</code> instead of the CLI; <code>const</code> bitstream extern</td></tr>
+        <tr><td><code>inc/Fw_global_config.h</code></td><td><span class="chip host">changed</span></td><td><code>SCHEME_HEAP_BYTES</code> (48 KB), <code>SCHEME_STACK_BYTES</code> (20 KB)</td></tr>
+        <tr><td><code>inc/FreeRTOSConfig.h</code></td><td><span class="chip host">changed</span></td><td><code>INCLUDE_uxTaskGetStackHighWaterMark</code> for <code>(stack-free)</code></td></tr>
+        <tr><td><code>fpga/qomu_fpga.c</code></td><td><span class="chip host">changed</span></td><td>Bitstream is <code>const</code></td></tr>
+        <tr><td><code>GCC_Project/qomu.ld</code></td><td><span class="chip host">changed</span></td><td><code>rom</code> 188 KB, <code>ram</code> from <code>0x2002F000</code></td></tr>
+        <tr><td><code>GCC_Project/config.mk</code></td><td><span class="chip host">changed</span></td><td>Make 4.4 fix</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Build -->
+<section>
+  <div class="head">
+    <div class="eyebrow">Mac → GitHub → Pi → Qomu</div>
+    <h2>Build and flash</h2>
+  </div>
+<pre><code># Mac (reference checkout, edited by Claude)
+git add -u qomu_apps/qomu_scheme &amp;&amp; git commit -m "…" &amp;&amp; git push
+
+# Pi 4 build host
+git pull &amp;&amp; cd qomu_apps/qomu_scheme/GCC_Project &amp;&amp; make
+cd ../../../TinyFPGA-Programmer-Application
+python3 ./tinyfpga-programmer-gui.py --port /dev/ttyACM0 \
+    --m4app ../qomu_apps/qomu_scheme/GCC_Project/output/qomu_scheme.bin --mode m4
+
+# replug (app enumerates as 1d50:6141), then
+screen /dev/ttyACM0        # press Enter for the banner and "&gt; "</code></pre>
+  <p class="cap">Flashing only writes the m4app region. To go back, flash <code>qomu_apps/qomu-initial-binaries/qomu_helloworldsw.bin</code> the same way.</p>
+</section>
+
+<!-- Next -->
+<section>
+  <div class="head">
+    <div class="eyebrow">Queued</div>
+    <h2>Next steps</h2>
+  </div>
+  <ol class="todo">
+    <li><code>do</code> (and so <code>blink</code>) should return nothing instead of <code>#f</code>.</li>
+    <li>Discard input that arrives before the first keypress (the echoed boot-banner junk).</li>
+    <li>Multi-line pastes lose characters while the REPL is busy: the 32-byte typeahead buffer drops anything beyond it. Stop reading when the buffer is full, so the bytes wait in the FPGA FIFO, and make the buffer bigger.</li>
+    <li>Remove the LED checkpoints, or keep them behind a build flag.</li>
+    <li>Speed: cache global lookups, allocate fewer cells per call, <code>-O2</code> for <code>scheme.c</code>, and maybe C10 at 72 MHz once the USB core is confirmed unaffected.</li>
+    <li>Bigger ideas: save and load Scheme source in the spare SPI flash; primitives for registers in your own FPGA logic.</li>
+  </ol>
+</section>
+
+<footer>Written by Claude with Andrey Vyetchnost, 22 November 2026. A companion to <em>Qomu App Anatomy</em>.</footer>
+</div>
+</body>
+</html>
