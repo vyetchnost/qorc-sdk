@@ -73,9 +73,66 @@ module top_tb;
         force dut.WBs_STB      = 1'b0;
         force dut.WBs_WE       = 1'b0;
         force dut.WBs_RD       = 1'b0;
+        force dut.WBs_ADR      = 17'h0;
+        force dut.WBs_WR_DAT   = 32'h0;
+        force dut.WBs_BYTE_STB = 4'h0;
     end
 
+
     integer errors = 0;
+
+    // ---- Wishbone master standing in for the M4 (registers at byte offsets) ----
+    // Timing as on the chip: request at a falling edge, the slave registers ACK
+    // on the next rising edge, the transfer completes on the rising edge after.
+    task wb_write;
+      input [16:0] addr;
+      input [31:0] data;
+    begin
+      @(negedge clk_12mhz);
+      force dut.WBs_ADR = addr; force dut.WBs_WR_DAT = data; force dut.WBs_BYTE_STB = 4'hF;
+      force dut.WBs_WE = 1'b1;  force dut.WBs_CYC = 1'b1;    force dut.WBs_STB = 1'b1;
+      @(posedge clk_12mhz);
+      @(negedge clk_12mhz);
+      `assert_true("wishbone write acknowledged", dut.WBs_ACK)
+      @(posedge clk_12mhz);
+      @(negedge clk_12mhz);
+      force dut.WBs_WE = 1'b0;  force dut.WBs_CYC = 1'b0;    force dut.WBs_STB = 1'b0;
+      force dut.WBs_BYTE_STB = 4'h0;
+    end
+    endtask
+
+    task wb_read;
+      input  [16:0] addr;
+      output [31:0] data;
+    begin
+      @(negedge clk_12mhz);
+      force dut.WBs_ADR = addr; force dut.WBs_BYTE_STB = 4'hF;
+      force dut.WBs_RD = 1'b1;  force dut.WBs_CYC = 1'b1;    force dut.WBs_STB = 1'b1;
+      @(posedge clk_12mhz);
+      @(negedge clk_12mhz);
+      `assert_true("wishbone read acknowledged", dut.WBs_ACK)
+      data = dut.WBs_RD_DAT;
+      @(posedge clk_12mhz);
+      @(negedge clk_12mhz);
+      force dut.WBs_RD = 1'b0;  force dut.WBs_CYC = 1'b0;    force dut.WBs_STB = 1'b0;
+      force dut.WBs_BYTE_STB = 4'h0;
+    end
+    endtask
+
+    task wb_expect;
+      input [16:0]  addr;
+      input [31:0]  value;
+      input [8*24:1] what;
+      reg   [31:0]  got;
+    begin
+      wb_read(addr, got);
+      if (got !== value) begin
+        $display("%d ERROR (wb_expect): %0s: read %08x from %03x, expected %08x", $time, what, got, addr, value);
+        errors = errors + 1;
+      end else
+        $display("   ok: %0s = %0x", what, got);
+    end
+    endtask
 
     task wait_usb_interpacket_delay;
     begin
@@ -598,6 +655,45 @@ module top_tb;
 
         $display("== SET_ADDRESS 0x1e");
         send_usb_address_device(8'h00, 8'h1e);
+
+        // ---- M4 -> USB: two bytes through the m2u FIFO, out as an EP1 IN packet
+        $display("== M4 writes 'Hi' to the m2u FIFO");
+        wb_expect(17'h080, 32'h1, "m2u flags empty");
+        wb_write(17'h084, 32'h48);
+        wb_write(17'h084, 32'h69);
+        #20000000;                       // let the bridge move them to EP1
+        // The bridge arms EP1 with an empty packet whenever the m2u FIFO is
+        // empty (upstream behaviour), so the first IN after reset returns a
+        // zero-length DATA0; the host polls again and gets the data as DATA1.
+        $display("== IN EP1, expect zero-length DATA0 (armed at reset)");
+        send_usb_in(8'h1e, 1);
+        expect_usb_data0(0, 0);
+        send_usb_ack();
+        #20000000;
+        $display("== IN EP1, expect DATA1 'Hi'");
+        send_usb_in(8'h1e, 1);
+        expect_usb_data1({8'h69, 8'h48}, 16);
+        send_usb_ack();
+        wb_expect(17'h080, 32'h1, "m2u flags empty again");
+
+        // ---- USB -> M4: an EP1 OUT packet into the u2m FIFO, read by the M4
+        $display("== OUT EP1 'ab', expect ACK");
+        wb_expect(17'h040, 32'h0, "u2m flags empty");
+        send_usb_out(8'h1e, 1);
+        send_usb_data0({8'h62, 8'h61}, 16);
+        expect_usb_ack();
+        #20000000;
+        `assert_true("rx interrupt is low while disabled", !dut.u_AL4S3B_FPGA_IP.Interrupt_o)
+        wb_write(17'h0C0, 32'h1);        // u2m_fifo_int_en
+        @(negedge clk_12mhz);
+        `assert_true("rx interrupt asserted with data waiting", dut.u_AL4S3B_FPGA_IP.Interrupt_o)
+        wb_expect(17'h040, 32'h2, "u2m flags >=2 entries");
+        wb_expect(17'h044, 32'h61, "u2m rdata 'a'");
+        wb_expect(17'h040, 32'h1, "u2m flags 1 entry");
+        wb_expect(17'h044, 32'h62, "u2m rdata 'b'");
+        wb_expect(17'h040, 32'h0, "u2m flags empty");
+        @(negedge clk_12mhz);
+        `assert_true("rx interrupt drops when drained", !dut.u_AL4S3B_FPGA_IP.Interrupt_o)
 
         $display("== debug counters: line transitions %0d, packet starts %0d, valid packets %0d, tx packets %0d",
                  dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[15:0],  dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[31:16],

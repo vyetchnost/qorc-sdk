@@ -251,7 +251,9 @@ end
 
 assign FIFO_m2u_push = M2U_FIFO_WDATA_valid;
 assign FIFO_m2u_din = M2U_FIFO_WDATA_reg;
-assign FIFO_u2m_pop = (!FIFO_u2m_empty && (WBs_ADR_i == FPGA_U2M_FIFO_RDATA) && WBs_CYC_i && !WBs_WE_i && WBs_STB_i && WBs_ACK_o);
+// qomu_scheme: upstream compared the word address WBs_ADR_i with the *byte*
+// address 0x044, so reading RDATA (word 0x11) never popped the FIFO.
+assign FIFO_u2m_pop = (!FIFO_u2m_empty && (WBs_ADR_i[ADDRWIDTH-2:0] == FPGA_U2M_FIFO_RDATA[ADDRWIDTH:2]) && WBs_CYC_i && !WBs_WE_i && WBs_STB_i && WBs_ACK_o);
 
 assign Device_ID_o = 32'h0000A5BD;
 assign Rev_Num     = 32'h00000200;
