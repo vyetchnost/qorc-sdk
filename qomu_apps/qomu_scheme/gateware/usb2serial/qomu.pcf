@@ -1,0 +1,5 @@
+# Qomu (EOS S3, WLCSP package): ball names, from the Qomu schematic
+#   USB D+  = FBIO_31 (E4), USB D- = FBIO_28 (F3), D+ pull-up control = FBIO_23 (E2)
+set_io usbp_io        E4
+set_io usbn_io        F3
+set_io usb_pu_cntrl_o E2
