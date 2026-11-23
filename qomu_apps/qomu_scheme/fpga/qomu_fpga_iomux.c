@@ -2,7 +2,7 @@
 // (open toolchain). Pad configuration the FPGA bitstream expects.
 #include <stdint.h>
 
-void fpga_iomux_init(void)
+void qomu_fpga_pads_init(void)
 {
     *(volatile uint32_t *)0x40004C5C  = 0x00000030;   /* PAD 23 */
     *(volatile uint32_t *)0x40004C70  = 0x00000830;   /* PAD 28 */

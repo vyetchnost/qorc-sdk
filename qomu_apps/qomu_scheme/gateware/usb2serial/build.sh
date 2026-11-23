@@ -78,7 +78,7 @@ if [ "$STEP" = install ] || [ "$STEP" = all ]; then
         echo "// (open toolchain). Pad configuration the FPGA bitstream expects."
         echo "#include <stdint.h>"
         echo
-        echo "void fpga_iomux_init(void)"
+        echo "void qomu_fpga_pads_init(void)"
         echo "{"
         awk 'function hex(x,  n, i) { x = tolower(x); sub(/^0x/, "", x); n = 0
                  for (i = 1; i <= length(x); i++) n = n * 16 + index("0123456789abcdef", substr(x, i, 1)) - 1
