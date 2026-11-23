@@ -15,6 +15,9 @@ Changes from the s3-gateware RTL (commit 2f8fed6):
   `RAM_8K_BLK` / `FIFO_8K_BLK` (were SpDE/QuickWorks wrappers).
 - `usb_fs_tx_mux.v`: recreated from the TinyFPGA USB core (missing upstream).
 - `strobe_out4.v`: duplicate `dflip` removed.
+- `usb_fs_rx.v`: `dvalid_tkn` / `dvalid_data` assigned with `<=` instead of `=`
+  inside clocked blocks (an upstream race that made simulation clock each bit twice).
+- `r512x8_512x8.v`: uses the native 1024x8 shape of the 8 Kbit block.
 - `qomu.pcf`: Qomu pins, from the schematic: D+ FBIO_31/E4, D- FBIO_28/F3,
   pull-up control FBIO_23/E2.
 

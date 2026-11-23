@@ -335,16 +335,16 @@ always @(posedge clk_48mhz) begin
 	 
    always @(posedge clk_48mhz) begin
       if (dvalid && line_state_valid && pid_complete && pkt_is_token) 
-			dvalid_tkn = 1'b1;
+			dvalid_tkn <= 1'b1;   // qomu_scheme: was blocking (=), a simulation race
        else 
-			dvalid_tkn = 1'b0;
+			dvalid_tkn <= 1'b0;
      end
 	 
    always @(posedge clk_48mhz) begin
       if (dvalid && line_state_valid && pid_complete && pkt_is_data) 
-			dvalid_data = 1'b1;
+			dvalid_data <= 1'b1;  // qomu_scheme: was blocking (=), a simulation race
        else 
-			dvalid_data = 1'b0;
+			dvalid_data <= 1'b0;
      end
 ///// added [Rakesh M 2020.05.07]: add pipelining
 

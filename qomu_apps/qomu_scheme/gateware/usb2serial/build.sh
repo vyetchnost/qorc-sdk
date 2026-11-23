@@ -11,6 +11,8 @@
 #   install - turn the generated header into ../../fpga/qomu_fpga.c (the array
 #             main.c loads); the SpDE original is kept as qomu_fpga.c.spde
 #   all     - check + compile + install (default)
+#   sim     - run the USB enumeration testbench (sim/usb_enum_tb.v) on the
+#             RTL with iverilog; add VCD=1 to also write a waveform
 set -e
 STEP=${1:-all}
 PKG=${PKG:-WR42}            # Qomu: EOS S3 in the WLCSP package
@@ -40,6 +42,18 @@ if [ "$STEP" = check ] || [ "$STEP" = all ]; then
     else
         echo "== check: pp3_cells_sim.v not found, skipping"
     fi
+fi
+
+if [ "$STEP" = sim ]; then
+    CELLS=$(find "$INSTALL_DIR" -name 'pp3_cells_sim.v' 2>/dev/null | head -1)
+    cp "$CELLS" "$HERE/sim/pp3_cells_sim.ref.v"   # reference copy (git-ignored)
+    echo "== sim: USB enumeration testbench"
+    iverilog -g2005 -I "$(dirname "$CELLS")" -s top_tb -o /tmp/usb_enum_tb.vvp \
+             "$CELLS" ../sim/check_models.v $SRCS ../sim/usb_enum_tb.v
+    ( cd "$HERE/sim" && vvp -n /tmp/usb_enum_tb.vvp ${VCD:++vcd} ) 2>&1 | tee "$HERE/sim.log"
+    # count testbench assertion failures only (not the RAM models' optional init.mem notes)
+    N=$(grep -c "ERROR (" "$HERE/sim.log" || true)
+    echo "== sim: $N testbench failures (log: sim.log)"
 fi
 
 if [ "$STEP" = compile ] || [ "$STEP" = all ]; then

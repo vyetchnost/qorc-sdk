@@ -1,3 +1,6 @@
 rtl/build/
 build.log
 _to_delete/
+sim.log
+sim/*.vcd
+sim/pp3_cells_sim.ref.v
