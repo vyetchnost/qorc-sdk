@@ -218,6 +218,10 @@ void scm_set_stack_limit(size_t bytes) { stack_max = bytes; }
  */
 static void poll_break(void)
 {
+    if (io->brk && io->brk()) {         /* ^C seen by the platform's input pump */
+        ta_head = ta_tail = 0;
+        scm_error("interrupted", NULL);
+    }
     if (!io->avail) return;
     while (((ta_tail + 1) % (int)sizeof tahead) != ta_head && io->avail()) {
         int c = io->getc();

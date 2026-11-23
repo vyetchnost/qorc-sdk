@@ -23,6 +23,9 @@
 #ifndef SCHEME_STACK_BYTES
 #define SCHEME_STACK_BYTES  (20 * 1024)     /* task stack, from the FreeRTOS heap */
 #endif
+#ifndef SCHEME_RX_BYTES
+#define SCHEME_RX_BYTES     (8 * 1024)      /* console input ring (pastes)      */
+#endif
 
 static uint8_t scheme_heap[SCHEME_HEAP_BYTES] __attribute__((aligned(8)));
 
@@ -50,17 +53,71 @@ static void q_putc(int c)
     HAL_usbserial_putc((char)c);
 }
 
+/*
+ * Console input. The USB-serial core drops bytes when its 512-byte RX FIFO is
+ * full; it has no flow control. A pasted block arrives in a few milliseconds
+ * while the REPL may be busy evaluating, so a separate higher-priority task
+ * drains the FIFO into this ring every tick, whatever the interpreter is doing.
+ * Ctrl-C is handled there too: it discards pending input and raises a flag.
+ */
+static uint8_t rx_ring[SCHEME_RX_BYTES];
+static volatile uint32_t rx_head;           /* written by the pump  */
+static volatile uint32_t rx_tail;           /* written by the REPL  */
+static volatile int rx_break;
+
+static void usb_rx_pump(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        while (HAL_usbserial_dataavailable()) {
+            uint32_t next = (rx_head + 1) % SCHEME_RX_BYTES;
+            int c;
+            if (next == rx_tail)
+                break;                      /* ring full: leave the rest in the FIFO */
+            c = HAL_usbserial_getc() & 0xff;
+            if (c == 3) {
+                taskENTER_CRITICAL();
+                rx_tail = rx_head;          /* ^C cancels everything still queued */
+                taskEXIT_CRITICAL();
+                rx_break = 1;
+                continue;
+            }
+            rx_ring[rx_head] = (uint8_t)c;
+            rx_head = next;
+        }
+        vTaskDelay(1);
+    }
+}
+
 static int q_avail(void)
 {
-    return HAL_usbserial_dataavailable() != 0;
+    return rx_head != rx_tail;
 }
 
 static int q_getc(void)
 {
-    /* USB serial runs without interrupts: poll, yielding to other tasks. */
-    while (!HAL_usbserial_dataavailable())
+    for (;;) {
+        if (rx_break) {                     /* ^C while the line editor waits */
+            rx_break = 0;
+            return 3;
+        }
+        if (rx_head != rx_tail) {
+            int c;
+            taskENTER_CRITICAL();
+            c = rx_ring[rx_tail];
+            rx_tail = (rx_tail + 1) % SCHEME_RX_BYTES;
+            taskEXIT_CRITICAL();
+            return c;
+        }
         vTaskDelay(1);
-    return HAL_usbserial_getc() & 0xff;
+    }
+}
+
+static int q_brk(void)
+{
+    if (!rx_break) return 0;
+    rx_break = 0;
+    return 1;
 }
 
 /* ---------------------------------------------------------------- primitives */
@@ -207,7 +264,7 @@ static const char board_prelude[] =
 
 static void scheme_task(void *arg)
 {
-    static const scm_io io = { q_putc, q_getc, q_avail, 1 };
+    static const scm_io io = { q_putc, q_getc, q_avail, 1, q_brk };
     (void)arg;
 
     /* Boot checkpoints (temporary): blue = in scm_init, green = waiting for
@@ -248,6 +305,10 @@ static void scheme_task(void *arg)
 
 void scheme_start_task(void)
 {
+    /* Input pump runs above the REPL so it drains the USB FIFO every tick. */
+    if (xTaskCreate(usb_rx_pump, "UsbRx", 256, NULL,
+                    (UBaseType_t)PRIORITY_NORMAL + 1, NULL) != pdPASS)
+        board_led(LED_RED, 1);
     if (xTaskCreate(scheme_task, "Scheme", SCHEME_STACK_BYTES / sizeof(StackType_t),
                     NULL, (UBaseType_t)PRIORITY_NORMAL, NULL) != pdPASS)
         board_led(LED_RED, 1);      /* not enough FreeRTOS heap for the task stack */

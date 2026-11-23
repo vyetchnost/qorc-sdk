@@ -23,6 +23,7 @@ typedef struct {
     int  (*getc)(void);         /* blocking read of one byte, -1 on EOF        */
     int  (*avail)(void);        /* nonzero if a byte is waiting (may be NULL)  */
     int  tty;                   /* 1: echo + line editing, LF -> CRLF output   */
+    int  (*brk)(void);          /* optional: returns 1 once per out-of-band ^C */
 } scm_io;
 
 #define SCM_VARIADIC 255
