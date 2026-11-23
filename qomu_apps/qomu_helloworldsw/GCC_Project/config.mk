@@ -93,7 +93,7 @@ export DEPEND_PATH=output\depend
 
 export APP_DIR = $(subst \GCC_Project,,${PROJ_DIR})
 TMPVAR = $(subst \, ,${APP_DIR})
-PROJ_NAME=$(word $(words ${TMPVAR}),${TMPVAR})
+PROJ_NAME:=$(notdir $(subst /GCC_Project,,$(CURDIR)))
 export PROJ_NAME
 
 ifndef QORC_TC_PATH
@@ -135,14 +135,14 @@ export LS=ls
 export CP=cp
 export MV=mv
 export ECHO=echo
-export PROJ_DIR=$(shell pwd)
+export PROJ_DIR:=$(CURDIR)
 export PROJ_ROOT=$(PROJ_DIR)/../../..
 export OUTPUT_PATH=$(PROJ_DIR)/output
 export DEPEND_PATH=$(PROJ_DIR)/output/depend
 
 export APP_DIR = $(subst /GCC_Project,,${PROJ_DIR})
 TMPVAR = $(subst ${DIR_SEP}, ,${APP_DIR})
-PROJ_NAME=$(word $(words ${TMPVAR}),${TMPVAR})
+PROJ_NAME:=$(notdir $(subst /GCC_Project,,$(CURDIR)))
 export PROJ_NAME
 
 ifndef QORC_TC_PATH

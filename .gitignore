@@ -48,5 +48,5 @@ Symbiflow_v*.gz.run
 
 # backup files
 *.bak
-qf_apps/qf_helloworldsw/GCC_Project/make.log
-qomu_apps/qomu_helloworldsw/GCC_Project/make.log
+
+TinyFPGA-Programmer-Application/

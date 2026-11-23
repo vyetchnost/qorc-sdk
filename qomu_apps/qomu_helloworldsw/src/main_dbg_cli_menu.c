@@ -89,7 +89,7 @@ const struct cli_cmd_entry qf_diagnostic[] =
 };
 
 const struct cli_cmd_entry my_main_menu[] = {
-    CLI_CMD_SUBMENU( "diag", qf_diagnostic, "Qomu diagnostic commands" ),
+    CLI_CMD_SUBMENU( "diag", qf_diagnostic, "avNov2026 Qomu diagnostic commands" ),
     CLI_CMD_TERMINATE()
 };
 
