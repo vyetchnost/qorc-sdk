@@ -16,7 +16,7 @@ ap.add_argument("--port", default="/dev/ttyACM0")
 ap.add_argument("--chunk", type=int, default=1024, help="bytes per write()")
 ap.add_argument("--gap", type=float, default=0.0, help="seconds between writes")
 ap.add_argument("--log", default="paste_test.log")
-ap.add_argument("--idle", type=float, default=4.0, help="stop after this many quiet seconds")
+ap.add_argument("--idle", type=float, default=30.0, help="stop after this many quiet seconds")
 a = ap.parse_args()
 
 fd = os.open(a.port, os.O_RDWR | os.O_NOCTTY)
@@ -40,6 +40,7 @@ th = threading.Thread(target=reader, daemon=True)
 th.start()
 
 def send(b):
+    last_rx[0] = time.time()      # quiet time counts from our own send
     view = memoryview(b)
     while view:
         n = os.write(fd, view)
@@ -60,7 +61,7 @@ for i in range(0, len(data), a.chunk):
     if a.gap:
         time.sleep(a.gap)
 wait_quiet(a.idle)
-send(b"(fifo-stats)\r"); wait_quiet(1.0)
+send(b"(fifo-stats)\r"); wait_quiet(2.0)
 stop[0] = True
 th.join()
 os.close(fd)
