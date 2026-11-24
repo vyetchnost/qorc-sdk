@@ -32,8 +32,9 @@ module usb_fs_rx (
   // Most recent packet passes PID and CRC checks (clk domain)
   output valid_packet,
 
-  // qomu_scheme debug: number of D+/D- line transitions (clk_48mhz domain, saturating)
-  output reg [15:0] dbg_line_toggles
+  // qomu_scheme debug: flips on every D+/D- line transition (clk_48mhz domain);
+  // usb_fs_pe counts the flips in its 12 MHz domain, where a counter meets timing
+  output reg dbg_line_flip
 );
   wire [3:0] pid_48;
   reg [6:0] addr_48;
@@ -103,10 +104,9 @@ module usb_fs_rx (
 
   wire [2:0] line_state = ls_trans ? DT : {1'b0, ls_pair};
 
-  initial dbg_line_toggles = 16'h0;
+  initial dbg_line_flip = 1'b0;
   always @(posedge clk_48mhz)
-      if (ls_trans && !dbg_line_toggles[15])   // saturate at 0x8000 (cheap)
-          dbg_line_toggles <= dbg_line_toggles + 1'b1;
+      if (ls_trans) dbg_line_flip <= !dbg_line_flip;
 
 
   ////////////////////////////////////////////////////////////////////////////////

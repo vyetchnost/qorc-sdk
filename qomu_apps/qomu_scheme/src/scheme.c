@@ -2289,7 +2289,7 @@ static const char prelude[] =
 "  (let ((loop (gensym \"do\")))\n"
 "    `(let ,loop ,(map (lambda (b) (list (car b) (cadr b))) bindings)\n"
 "       (if ,(car test-and-result)\n"
-"           (begin #f ,@(cdr test-and-result))\n"
+"           (begin (if #f #f) ,@(cdr test-and-result))\n"
 "           (begin ,@body (,loop ,@(map (lambda (b) (if (null? (cddr b)) (car b) (caddr b))) bindings)))))))\n"
 "(define-macro (while test . body)\n"
 "  (let ((loop (gensym \"while\")))\n"

@@ -375,6 +375,17 @@ static int usb_dbg_read(uint32_t *lines, uint32_t *starts, uint32_t *valid, uint
 }
 
 /*
+ * Bring-up diagnostics while waiting for the first key: USB progress on the
+ * LEDs (below) and a [wait] status line once a second. Off by default; the
+ * status lines are echoed back as input unless a terminal already has the
+ * port open in raw mode.
+ */
+#ifndef SCHEME_USB_DIAG
+#define SCHEME_USB_DIAG 0
+#endif
+
+#if SCHEME_USB_DIAG
+/*
  * Show how far USB gets, on the LEDs, while no terminal is attached:
  *   red solid      - D+/D- never change          (pads / input path)
  *   red blinking   - lines toggle, no sync found  (clock recovery / timing)
@@ -397,6 +408,7 @@ static void usb_dbg_leds(unsigned tick)
     else if (lines > 0)    board_led(LED_RED, blink);
     else                   board_led(LED_RED, 1);
 }
+#endif /* SCHEME_USB_DIAG */
 
 /* (usb-dbg) -> "lines starts valid tx" counter string, or #f with SpDE gateware */
 static scm_obj p_usb_dbg(scm_obj args)
@@ -480,10 +492,7 @@ static const char board_prelude[] =
  * with both FIFO flag nibbles, the RX interrupt enable and count, bytes in
  * the input ring and the gateware USB counters. Seeing these lines at all
  * proves M4->USB works; typing should move u2m (FIFO) and then irq/ring. */
-#ifndef SCHEME_WAIT_STATUS
-#define SCHEME_WAIT_STATUS 0
-#endif
-#if SCHEME_WAIT_STATUS
+#if SCHEME_USB_DIAG
 static void put_hex(uint32_t v, int digits)
 {
     while (digits--) q_putc("0123456789abcdef"[(v >> (4 * digits)) & 0xf]);
@@ -509,16 +518,13 @@ static void wait_status_line(void)
     }
     put_str("\r\n");
 }
-#endif /* SCHEME_WAIT_STATUS */
+#endif /* SCHEME_USB_DIAG */
 
 static void scheme_task(void *arg)
 {
     static const scm_io io = { q_putc, q_getc, q_avail, 1, q_brk };
     (void)arg;
 
-    /* Boot checkpoints (temporary): blue = in scm_init, green = waiting for
-     * the first keypress, all off = REPL running. */
-    board_led(LED_BLUE, 1);
     scm_init(scheme_heap, sizeof scheme_heap, &io);
     scm_set_stack_limit(SCHEME_STACK_BYTES - 3 * 1024);
 
@@ -541,18 +547,17 @@ static void scheme_task(void *arg)
     scm_defprim("stack-free", p_stack_free, 0, 0);
 #endif
     scm_eval_cstr(board_prelude);
-    board_led(LED_BLUE, 0);
-    board_led(LED_GREEN, 1);
 
-    /* Print the banner once someone is typing, i.e. a terminal is open.
-     * Meanwhile show the USB core's progress on the LEDs (see usb_dbg_leds). */
+    /* Green while waiting: the banner prints once someone is typing, i.e. a
+     * terminal is open. All LEDs go off when the REPL starts. */
+    board_led(LED_GREEN, 1);
     {
+#if SCHEME_USB_DIAG
         unsigned tick = 0;
+#endif
         while (!q_avail()) {
+#if SCHEME_USB_DIAG
             usb_dbg_leds(tick++);
-#if SCHEME_WAIT_STATUS
-            /* Bring-up only: anything sent before a terminal opens the port
-             * is echoed back by the host tty (cooked mode) as fake input. */
             if (tick % 20 == 0)
                 wait_status_line();
 #endif
