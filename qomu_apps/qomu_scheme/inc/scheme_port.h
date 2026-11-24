@@ -18,4 +18,8 @@
 /* Longest console input line. */
 #define SCM_LINE_MAX 200
 
+/* Compile scheme.c with -O2 (the SDK builds everything with -Os). Costs code
+ * space; remove to measure the difference. */
+#define SCM_OPTIMIZE_SPEED 1
+
 #endif

@@ -30,6 +30,12 @@
 #  endif
 #endif
 
+/* The interpreter's speed matters more than its size: a port can compile
+ * just this file with -O2 while the rest of its firmware stays at -Os. */
+#if defined(SCM_OPTIMIZE_SPEED) && defined(__GNUC__) && !defined(__clang__)
+#pragma GCC optimize ("O2")
+#endif
+
 #ifndef SCM_MALLOC
 #define SCM_MALLOC(n) malloc(n)
 #define SCM_FREE(p)   free(p)
@@ -129,6 +135,7 @@ static int gctop;
 static jmp_buf *err_jmp;
 static char  *stack_base;
 static size_t stack_max;
+static uintptr_t stack_limit;      /* stack_base - stack_max, 0 = no check */
 static unsigned poll_count;
 static unsigned gensym_counter;
 
@@ -201,15 +208,20 @@ void scm_error(const char *msg, scm_obj irritant)
     for (;;) { }
 }
 
-static void check_stack(void)
+static void update_stack_limit(void)
 {
-    char *here = (char *)__builtin_frame_address(0);
-    /* signed: callers shallower than the recorded base give a negative depth */
-    if (stack_base && stack_max && (ptrdiff_t)(stack_base - here) > (ptrdiff_t)stack_max)
+    uintptr_t base = (uintptr_t)stack_base;
+    stack_limit = (base && stack_max && stack_max < base) ? base - stack_max : 0;
+}
+
+static inline void check_stack(void)
+{
+    /* one compare per eval: deeper than stack_max below the recorded base */
+    if ((uintptr_t)__builtin_frame_address(0) < stack_limit)
         scm_error("recursion too deep (C stack limit)", NULL);
 }
 
-void scm_set_stack_limit(size_t bytes) { stack_max = bytes; }
+void scm_set_stack_limit(size_t bytes) { stack_max = bytes; update_stack_limit(); }
 
 /*
  * Look for Ctrl-C while evaluating. Other input is kept for the reader. When
@@ -1051,10 +1063,38 @@ static void define_var(scm_obj sym, scm_obj val, scm_obj env)
     CAR(env) = cons(cons(sym, val), CAR(env));
 }
 
-static scm_obj bind_args(scm_obj params, scm_obj args, scm_obj env, scm_obj fn)
+/*
+ * Make the frame for a call. With fresh != 0 the argument list was just built
+ * by the evaluator and nothing else refers to it, so its cells become the
+ * frame's binding list in place: (v1 v2 ...) -> ((p1 . v1) (p2 . v2) ...),
+ * one new cell per parameter instead of two. Lists that may be shared (from
+ * apply, or macro arguments, which are source code) are never modified.
+ */
+static scm_obj bind_args(scm_obj params, scm_obj args, scm_obj env, scm_obj fn, int fresh)
 {
     scm_obj frame = cons(NIL, env);
     int g = gctop;
+    if (fresh) {
+        scm_obj a = args, last = NIL;
+        while (is_pair(params)) {
+            if (!is_pair(a)) scm_error("too few arguments to", fn);
+            CAR(a) = cons(CAR(params), CAR(a));     /* reachable through args */
+            gctop = g;
+            last = a;
+            params = CDR(params);
+            a = CDR(a);
+        }
+        if (params != NIL) {                         /* rest parameter gets the remaining list */
+            scm_obj tail = cons(cons(params, a), NIL);
+            gctop = g;
+            if (last == NIL) CAR(frame) = tail;
+            else { CDR(last) = tail; CAR(frame) = args; }
+        } else {
+            if (a != NIL) scm_error("too many arguments to", fn);
+            CAR(frame) = last == NIL ? NIL : args;
+        }
+        return frame;
+    }
     while (is_pair(params)) {
         if (!is_pair(args)) scm_error("too few arguments to", fn);
         CAR(frame) = cons(cons(CAR(params), CAR(args)), CAR(frame));
@@ -1101,7 +1141,7 @@ static scm_obj apply(scm_obj fn, scm_obj args)
     if (FIXNUMP(fn)) scm_error("not a procedure:", fn);
     if (fn->type == T_PRIM) v = call_prim(fn, args);
     else if (fn->type == T_CLOS) {
-        scm_obj env = bind_args(CAR(fn->u.clos.code), args, fn->u.clos.env, fn);
+        scm_obj env = bind_args(CAR(fn->u.clos.code), args, fn->u.clos.env, fn, 0);
         v = eval_body(CDR(fn->u.clos.code), env);
     } else scm_error("not a procedure:", fn);
     gctop = g;
@@ -1469,7 +1509,7 @@ tail:
 
     fn = eval_leaf(op, env);
     if (!FIXNUMP(fn) && fn->type == T_MACRO) {
-        scm_obj menv = bind_args(CAR(fn->u.clos.code), rest, fn->u.clos.env, fn);
+        scm_obj menv = bind_args(CAR(fn->u.clos.code), rest, fn->u.clos.env, fn, 0);
         scm_obj exp = eval_body(CDR(fn->u.clos.code), menv);
         if (is_pair(exp)) { CAR(x) = CAR(exp); CDR(x) = CDR(exp); }
         else { CAR(x) = s_begin; CDR(x) = cons(exp, NIL); }
@@ -1492,7 +1532,7 @@ do_apply:
     if (FIXNUMP(fn)) scm_error("not a procedure:", fn);
     if (fn->type == T_PRIM) RET(call_prim(fn, args));
     if (fn->type != T_CLOS) scm_error("not a procedure:", fn);
-    env = bind_args(CAR(fn->u.clos.code), args, fn->u.clos.env, fn);
+    env = bind_args(CAR(fn->u.clos.code), args, fn->u.clos.env, fn, 1);   /* args are fresh here */
     body = CDR(fn->u.clos.code);
 
 seq:
@@ -2234,7 +2274,7 @@ static scm_obj p_macroexpand1(scm_obj args)
     if (!is_pair(x) || !is_sym(CAR(x))) return x;
     m = CAR(x)->u.sym.val;
     if (FIXNUMP(m) || m->type != T_MACRO) return x;
-    return eval_body(CDR(m->u.clos.code), bind_args(CAR(m->u.clos.code), CDR(x), m->u.clos.env, m));
+    return eval_body(CDR(m->u.clos.code), bind_args(CAR(m->u.clos.code), CDR(x), m->u.clos.env, m, 0));
 }
 
 /* ------------------------------------------------------------------ prelude */
@@ -2411,7 +2451,7 @@ int scm_eval_cstr(const char *src)
 
     {   /* keep the shallowest entry point seen as the stack base */
         char *here = (char *)__builtin_frame_address(0);
-        if (!stack_base || here > stack_base) stack_base = here;
+        if (!stack_base || here > stack_base) { stack_base = here; update_stack_limit(); }
     }
     err_jmp = &jb;
     if (setjmp(jb)) {
@@ -2438,6 +2478,7 @@ void scm_repl(void)
 {
     jmp_buf jb;
     stack_base = (char *)__builtin_frame_address(0);
+    update_stack_limit();
     err_jmp = &jb;
     setjmp(jb);
     for (;;) {
