@@ -71,23 +71,37 @@ static volatile uint32_t rx_dropped;        /* bytes lost to a full ring */
 static volatile uint32_t rx_irqs;           /* ISR entries (diagnostics) */
 static volatile uint32_t rx_total;          /* bytes taken from the FIFO (diagnostics) */
 
+/*
+ * Bytes the u2m FIFO is guaranteed to hold for each pop-flag value
+ * (0 empty, 1 one, 2 >=2, 3 >=4, 4 >=8, 5 >=16, 6 >=32, 8 >=64, D >=1/4,
+ * E >=1/2, F full; reserved codes count as 1). Every FPGA register read
+ * costs ~2.3 us, so the ISR reads the flags once per batch and then pops
+ * that many bytes with one read each, instead of flags + flags + data.
+ */
+static const uint16_t rx_pop_count[16] = {
+    0, 1, 2, 4, 8, 16, 32, 1, 64, 1, 1, 1, 1, 128, 256, 512
+};
+
 static void usb_rx_isr(void)
 {
     /* Always drain the FIFO: the interrupt is level-triggered and would
      * re-fire forever if bytes were left behind. */
+    unsigned n;
     rx_irqs++;
-    while (HAL_usbserial_dataavailable()) {
-        int c = HAL_usbserial_getc() & 0xff;
-        rx_total++;
-        uint32_t next = (rx_head + 1) % SCHEME_RX_BYTES;
-        if (c == 3) {
-            rx_tail = rx_head;              /* ^C cancels everything still queued */
-            rx_break = 1;
-        } else if (next == rx_tail) {
-            rx_dropped++;
-        } else {
-            rx_ring[rx_head] = (uint8_t)c;
-            rx_head = next;
+    while ((n = rx_pop_count[pusbserial_regs->u2m_fifo_flags & 0xf]) != 0) {
+        while (n--) {
+            int c = pusbserial_regs->rdata & 0xff;      /* reading pops the FIFO */
+            uint32_t next = (rx_head + 1) % SCHEME_RX_BYTES;
+            rx_total++;
+            if (c == 3) {
+                rx_tail = rx_head;          /* ^C cancels everything still queued */
+                rx_break = 1;
+            } else if (next == rx_tail) {
+                rx_dropped++;
+            } else {
+                rx_ring[rx_head] = (uint8_t)c;
+                rx_head = next;
+            }
         }
     }
 }
