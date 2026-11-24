@@ -33,6 +33,8 @@ body {
 }
 .wrap { max-width: 900px; margin: 0 auto; display: grid; gap: 56px; }
 .prose { max-width: 66ch; display: grid; gap: 12px; }
+p.prose { display: block; }   /* inline code must stay inline */
+.wrap, section, .head, header { grid-template-columns: minmax(0, 1fr); }   /* wide figures scroll in place instead of widening the page */
 h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.15; margin: 0; }
 h1 { font-size: clamp(2rem, 5vw, 2.8rem); font-weight: 600; letter-spacing: -0.01em; }
 h2 { font-size: 1.55rem; font-weight: 600; }
@@ -120,13 +122,14 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
 <div class="wrap">
 
 <header>
-  <div class="eyebrow">qorc-sdk · Qomu · EOS S3 · 22 Nov 2026</div>
+  <div class="eyebrow">qorc-sdk · Qomu · EOS S3 · 22–23 Nov 2026</div>
   <h1>Qomu Scheme: from question to REPL</h1>
-  <p class="lede">How a Scheme interpreter went from "do you think we can?" to a working prompt on the Qomu's USB-serial console in one morning: what we built, how it fits into the SDK, and every bug we hit on the way to the first <code>&gt;</code>.</p>
+  <p class="lede">How a Scheme interpreter went from "do you think we can?" to a working prompt on the Qomu's USB-serial console in one morning: what we built, how it fits into the SDK, and every bug we hit on the way to the first <code>&gt;</code>. <a href="#part-two">Part two</a> follows a paste problem down into the eFPGA: the USB core rebuilt from source with the open toolchain, three gateware bugs, RX flow control, and measurements that put the last two missing bytes upstream of the board.</p>
   <div class="facts">
     <div class="fact"><b>Written from scratch</b><span>A ~2,400-line portable C99 interpreter. TinyScheme wasn't reachable from the sandbox, so we wrote our own.</span></div>
     <div class="fact"><b>Built on helloworld</b><span>Same USB-serial gateware and FreeRTOS startup. The CLI task is replaced by a Scheme task.</span></div>
     <div class="fact"><b>~25 KB of code</b><span>4,096 cells of 12 bytes. The base system uses ~1,000; 3,077 are free at the prompt.</span></div>
+    <div class="fact"><b>USB core rebuilt from source</b><span>usb2serial compiled with Yosys and VPR instead of SpDE. Three bugs fixed and flow control added, so the board never drops input.</span></div>
     <div class="fact"><b>0 failures on hardware</b><span>The regression suite passes on the board, after 137 tests passed on the host under ASan, UBSan and a GC-every-allocation stress mode.</span></div>
   </div>
 </header>
@@ -145,7 +148,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
     <li><div class="dot"></div><div class="what"><b>qomu_apps/qomu_scheme created</b><span>A copy of helloworld plus <code>scheme.c</code>, <code>scheme_task.c</code> and two headers. <code>main()</code> calls <code>scheme_start_task()</code> instead of <code>CLI_start_task()</code>.</span></div><div class="when">06:24</div></li>
     <li><div class="dot bug"></div><div class="what"><b>Make 4.4 breaks config.mk</b><span><code>$(word 0,…)</code>: exported <code>$(shell pwd)</code> evaluates empty under the newer Make.</span></div><div class="when">06:26</div></li>
     <li><div class="dot bug"></div><div class="what"><b>Link: rom overflowed by 424 bytes</b><span>Fixed with a <code>const</code> bitstream and a 32 KB boundary shift. The image is 160,168 bytes.</span></div><div class="when">06:28</div></li>
-    <li><div class="dot"></div><div class="what"><b>Built and flashed</b><span><code>qfprog --m4app … --mode m4</code>. The board enumerates as <code>1d50:6141</code>, the app's product ID.</span></div><div class="when">06:44</div></li>
+    <li><div class="dot"></div><div class="what"><b>Built and flashed</b><span>With the TinyFPGA programmer that ships with qorc-sdk: <code>tinyfpga-programmer-gui.py --m4app … --mode m4</code>. The board enumerates as <code>1d50:6141</code>, the app's product ID.</span></div><div class="when">06:44</div></li>
     <li><div class="dot bug"></div><div class="what"><b>Silent console</b><span>LED checkpoints show it's stuck printing the banner: USB TX blocks forever when nobody is reading.</span></div><div class="when">07:06</div></li>
     <li><div class="dot bug"></div><div class="what"><b>"recursion too deep" at the banner</b><span>Unsigned arithmetic in the stack-depth check wrapped a negative depth into a huge one.</span></div><div class="when">07:11</div></li>
     <li><div class="dot win"></div><div class="what"><b>First prompt</b><span><code>Qomu Scheme - 3084 cells free.</code> LEDs, timing, recursion and Ctrl-C all work.</span></div><div class="when">07:17</div></li>
@@ -175,17 +178,17 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
       <!-- FPGA -->
       <rect class="box fab" x="200" y="88" width="320" height="52" rx="6"/>
       <text class="t-title" x="360" y="110" text-anchor="middle">USB-serial core in the eFPGA</text>
-      <text class="t-sub" x="360" y="128" text-anchor="middle">loaded by main() via load_fpga() · RX/TX FIFOs, no IRQ</text>
+      <text class="t-sub" x="360" y="128" text-anchor="middle">open-toolchain build · RX flow control · RX interrupt</text>
       <line class="wire" x1="360" y1="140" x2="360" y2="166" marker-start="url(#ah)" marker-end="url(#ah)"/>
       <text class="t-tag t-fab" x="372" y="158">HAL_usbserial_getc/putc · FIFO flags</text>
       <!-- Task -->
       <rect class="box fw" x="120" y="168" width="480" height="96" rx="6"/>
       <text class="t-title" x="360" y="190" text-anchor="middle">scheme_task.c · FreeRTOS task, 20 KB stack</text>
-      <text class="t-code" x="360" y="212" text-anchor="middle">q_getc: poll + vTaskDelay(1) · q_putc: drop after 100 ms full</text>
+      <text class="t-code" x="360" y="212" text-anchor="middle">RX interrupt → 8 KB ring · q_putc: drop after 100 ms full</text>
       <text class="t-code" x="360" y="230" text-anchor="middle">peek · poke · sleep · ms · led · gpio-read/write · heap-free</text>
       <text class="t-code" x="360" y="248" text-anchor="middle">48 KB static cell heap · banner after first keypress</text>
       <line class="wire" x1="360" y1="264" x2="360" y2="290" marker-start="url(#ah)" marker-end="url(#ah)"/>
-      <text class="t-tag" x="372" y="282">scm_io { putc, getc, avail, tty }</text>
+      <text class="t-tag" x="372" y="282">scm_io { putc, getc, avail, tty, brk }</text>
       <!-- Core -->
       <rect class="box app" x="120" y="292" width="480" height="120" rx="6"/>
       <text class="t-title" x="360" y="314" text-anchor="middle">scheme.c · portable interpreter core</text>
@@ -320,7 +323,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
       <h3>Junk at the first prompt: <code>##############QScV qp</code> <span class="chip host">host tty</span></h3>
       <div class="body">
         <p>The boot banner from <code>main()</code> is echoed back by the Linux tty before <code>screen</code> switches the port to raw mode, and the reader parses it as input. Harmless.</p>
-        <p class="fix"><b>Planned:</b> discard input that arrives before the first real keypress, or drop the boot banner.</p>
+        <p class="fix"><b>Fixed (23 Nov):</b> after the first key the firmware waits 150 ms, then discards everything received, that key included, before printing its banner.</p>
       </div>
     </div>
   </div>
@@ -348,6 +351,185 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
   </div>
 </section>
 
+
+<!-- ================= PART TWO ================= -->
+<section id="part-two">
+  <div class="head">
+    <div class="eyebrow">Part two · Sunday afternoon to Monday evening</div>
+    <h2>The paste problem</h2>
+  </div>
+  <div class="prose">
+    <p>Pasting <code>tests.scm</code> in one go garbled it; single lines were fine. The firmware fixes came first, and none of them was enough. A measurement then showed why: one read of an FPGA register costs 112 CPU cycles. A paste arrives faster than the M4 can empty the gateware's 512-byte receive FIFO, and the stock usb2serial core has no way to tell the host to wait. Fixing that meant changing the gateware, and the only bitstream we had came from QuickLogic's proprietary SpDE tools. So we ported the core to the open toolchain.</p>
+  </div>
+  <ul class="stack">
+    <li><div class="dot bug"></div><div class="what"><b>Multi-line pastes garble</b><span>Pasting 10–15 lines at a time worked; the whole file didn't.</span></div><div class="when">Sun pm</div></li>
+    <li><div class="dot"></div><div class="what"><b>Firmware fixes</b><span>A bigger typeahead (32 → 256 bytes) that stops reading when full; then an RX interrupt feeding an 8 KB ring. Input was still lost, while <code>(rx-dropped)</code> stayed 0: the bytes vanished before the firmware ever saw them.</span></div><div class="when">Sun pm</div></li>
+    <li><div class="dot host"></div><div class="what"><b>Measured: <code>bench-fpga-read</code></b><span>An SRAM load takes 6 cycles; an FPGA register read takes 112 (2.3 µs). Each byte needs two reads. The 512-byte FIFO overflows during a paste.</span></div><div class="when">Mon am</div></li>
+    <li><div class="dot"></div><div class="what"><b>Decision: the open toolchain</b><span>QuickLogic's ql_symbiflow (Yosys + VPR) in Docker on the Mac. Rollback stays easy: flashing only writes the m4app region, and the bootloader is never touched.</span></div><div class="when">Mon am</div></li>
+    <li><div class="dot host"></div><div class="what"><b>Docker image built</b><span>A custom Dockerfile with pinned packages, after the official installer silently produced no <code>yosys</code>.</span></div><div class="when">Mon midday</div></li>
+    <li><div class="dot bug"></div><div class="what"><b>Port routes, simulation enumerates, the board doesn't</b><span><code>Device not responding to setup address … error -71</code>. Several plausible fixes changed nothing.</span></div><div class="when">Mon pm</div></li>
+    <li><div class="dot"></div><div class="what"><b>On-chip counters and an LED ladder</b><span>The core counts line transitions, packet starts, valid packets and transmitted packets, and the LEDs show the furthest stage reached. Blue: the core receives and answers, so the transmitter was broken.</span></div><div class="when">15:39</div></li>
+    <li><div class="dot win"></div><div class="what"><b>Transmitter moved to 12 MHz: it enumerates</b><span>The 48 MHz transmit logic needed ~50 ns per clock and had 20.8. One bit per 12 MHz clock gives it 83 ns. Keys still didn't arrive, and nothing came out.</span></div><div class="when">16:06</div></li>
+    <li><div class="dot bug"></div><div class="what"><b>Two FIFO problems</b><span>An upstream bug: reading a byte never removed it from the FIFO. And the hard FIFO block, as mapped by the open toolchain, didn't move data. The FIFOs were rebuilt on the RAM block, and the simulation now tests data in both directions.</span></div><div class="when">16:43</div></li>
+    <li><div class="dot win"></div><div class="what"><b>First prompt on open-toolchain gateware</b><span>The REPL works in both directions on a bitstream built from source.</span></div><div class="when">16:59</div></li>
+    <li><div class="dot"></div><div class="what"><b>RX flow control</b><span>In simulation the host's 17th packet is refused while the FIFO is full, all 512 bytes come out in order, and the retried packet is delivered.</span></div><div class="when">17:23</div></li>
+    <li><div class="dot bug"></div><div class="what"><b>Full paste: 136 of 137 checks</b><span><code>Error: unbound variable: genm</code>. Two bytes of <code>gensym</code> were missing, in the same place on every run.</span></div><div class="when">17:42</div></li>
+    <li><div class="dot"></div><div class="what"><b>Byte counters along the path</b><span>6,249 of the expected 6,251 bytes reached the FIFO. Every byte that arrived was read, and none was refused.</span></div><div class="when">18:07</div></li>
+    <li><div class="dot win"></div><div class="what"><b>Direct write: 137 of 137</b><span>The same file written straight to <code>/dev/ttyACM0</code> from a script, bypassing the terminal, ssh and <code>screen</code>, arrived intact. It took 89 s, and flow control held the host back the whole time.</span></div><div class="when">18:19</div></li>
+  </ul>
+</section>
+
+<!-- Serial path -->
+<section>
+  <div class="head">
+    <div class="eyebrow">Where a pasted byte travels</div>
+    <h2>The serial path, end to end</h2>
+  </div>
+  <p class="prose">Every stage between the keyboard and the reader, with what it does when it can't keep up and what we know about it. The two bytes missing from the <code>screen</code> paste sit at file offsets 5118–5119, just before the 5 KB mark and at the end of a 32-byte USB packet. They were lost somewhere in the first three rows.</p>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Stage</th><th>Where</th><th>When it can't keep up</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>Terminal paste</td><td>Mac terminal app</td><td>Sends the clipboard into the ssh session</td><td><span class="chip bug">suspect</span></td></tr>
+        <tr><td>ssh</td><td>Mac → Pi</td><td>TCP; flow-controlled</td><td><span class="chip bug">suspect</span></td></tr>
+        <tr><td><code>screen</code></td><td>Pi</td><td>Reads its pty, writes <code>/dev/ttyACM0</code></td><td><span class="chip bug">suspect</span></td></tr>
+        <tr><td>tty + <code>cdc_acm</code></td><td>Pi kernel</td><td>Blocking writes; 32-byte bulk packets</td><td><span class="chip ok">lossless</span> direct writes</td></tr>
+        <tr><td>OUT endpoint buffer</td><td><code>usb_fs_out_pe</code></td><td>32 bytes; answers NAK until drained, and the host retries</td><td><span class="chip ok">lossless</span> sim + counters</td></tr>
+        <tr><td>Bridge, flow-control gate</td><td><code>usb_m4_bridge_ep</code></td><td>Pulls a byte only when the FIFO has room for 4</td><td><span class="chip ok">lossless</span> sim</td></tr>
+        <tr><td>USB→M4 FIFO</td><td><code>f512x8_512x8</code> on RAM</td><td>512 bytes; a push into a full FIFO is counted</td><td><span class="chip ok">lossless</span> 0 refused</td></tr>
+        <tr><td>RX interrupt</td><td><code>scheme_task.c</code></td><td>Two register reads per byte, ~4.7 µs</td><td><span class="chip ok">lossless</span> isr = pop</td></tr>
+        <tr><td>Input ring</td><td><code>scheme_task.c</code></td><td>8 KB; overflow is counted</td><td><span class="chip ok">lossless</span> <code>(rx-dropped)</code> 0</td></tr>
+        <tr><td>Typeahead</td><td><code>scheme.c</code></td><td>256 bytes; stops reading when full</td><td><span class="chip ok">lossless</span> by design</td></tr>
+        <tr><td>Line editor, reader</td><td><code>scheme.c</code></td><td>200-character lines</td><td><span class="chip ok">ok</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cap"><code>(fifo-stats)</code> returns the gateware's push, pop and refused-push counts, the bytes written for output, and the firmware's own count of bytes taken by the interrupt. A paste test reads it before and after; any missing byte shows up as a difference.</p>
+</section>
+
+<!-- Port -->
+<section>
+  <div class="head">
+    <div class="eyebrow">qomu_scheme/gateware</div>
+    <h2>The open-toolchain port</h2>
+  </div>
+  <p class="prose">The starting point was usb2serial from s3-gateware (commit 2f8fed6), the core behind helloworld's SpDE bitstream. SpDE-specific pieces were replaced with what Yosys and VPR understand, and the build emits the same C array <code>axFPGABitStream</code> that <code>load_fpga()</code> already loads, so the firmware side barely changed.</p>
+  <div class="cols">
+    <div class="card">
+      <h3>Toolchain</h3>
+      <ul>
+        <li>ql_symbiflow v1.3.0 in an Ubuntu 20.04 image, <code>symbiflow-qomu</code>, built from <code>gateware/docker/Dockerfile</code>.</li>
+        <li>Miniconda with Python 3.7, and exact versions of Yosys, its plugins and VTR pinned.</li>
+        <li>Device <code>ql-eos-s3_wlcsp</code>, package WR42. Runs on Apple silicon under amd64 emulation.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>RTL changes</h3>
+      <ul>
+        <li>The SpDE pad cell became a plain tristate <code>assign</code>.</li>
+        <li>The SpDE-generated RAM and FIFO cores were rewritten as wrappers around the toolchain's primitives.</li>
+        <li>The clock divider and switch were removed: 48 MHz comes straight from <code>Sys_Clk1</code>.</li>
+        <li>A missing module was recreated, a duplicate removed, and a few simulation races fixed.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Pins and pads</h3>
+      <ul>
+        <li><code>qomu.pcf</code>: D+ on ball E4, D− on F3, pull-up control on E2, taken from the Qomu schematic.</li>
+        <li><code>iomux2c.py</code> turns the toolchain's pad script into <code>qomu_fpga_pads_init()</code>, which <code>main()</code> calls before <code>load_fpga()</code>.</li>
+        <li>Inputs from the fabric need the pad's receive-enable bit; the script sets it and raises the drive to 4 mA.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- Bugs part two -->
+<section>
+  <div class="head">
+    <div class="eyebrow">Between "it routes" and "&gt;"</div>
+    <h2>What broke, part two</h2>
+  </div>
+  <div class="gotchas">
+    <div class="gotcha">
+      <h3>Paste loss with <code>(rx-dropped)</code> at 0 <span class="chip fpga">gateware</span></h3>
+      <div class="body">
+        <p>The typeahead and polling fixes helped, but input still went missing while the firmware's own buffers never overflowed. The bytes were lost in the gateware FIFO, which the M4 drains at two 112-cycle register reads per byte.</p>
+        <p class="fix"><b>Fix:</b> RX flow control in the gateware, described below.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>The official installer produced no <code>yosys</code> <span class="chip host">toolchain</span></h3>
+      <div class="body">
+        <p>It installs the latest Miniconda, whose Python doesn't match the 3.7 packages, and it doesn't check for errors. Smaller snags followed: the Docker credential helper wasn't on the PATH, VPR needed <code>libtbb.so.2</code>, and the simulation library lacked a model for the clock buffer.</p>
+        <p class="fix"><b>Fix:</b> our own Dockerfile with every package pinned, <code>libtbb2</code> installed, and a stand-in clock-buffer model for simulation.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>Not enumerating: error -71 <span class="chip bug">gateware</span></h3>
+      <div class="body">
+        <p>The pull-up worked and the FPGA configured, but the host never got a usable answer. Pad receive-enable, simulation race fixes, a timing constraints file, and a rewrite of the receiver's line-state logic each changed nothing. Counters read out over LEDs showed valid packets arriving and replies leaving, which put the fault in the transmitter. The timing report agreed: its 32-bit state compare needed ~50 ns per 48 MHz clock.</p>
+        <p class="fix"><b>Fix:</b> the transmitter runs on the 12 MHz clock, one bit per clock. Two follow-ups: a byte load now takes priority over the bit shift in the same cycle, and the first CRC byte includes the last data bit. The only remaining timing violation is in a debug counter.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>Enumerates, but no input and no output <span class="chip bug">gateware</span></h3>
+      <div class="body">
+        <p>Upstream bug: reading a received byte should remove it from the FIFO, but the check compared a word address with a byte address and never matched. Separately, with the open toolchain the hard FIFO block didn't move data; we didn't pin down why. The RAM block, by contrast, was proven: the USB packet buffers use it, and the enumeration descriptors pass through it.</p>
+        <p class="fix"><b>Fix:</b> a one-line address fix, and both FIFOs rebuilt on the RAM block, with their own read and write pointers and the same flag values, so firmware and HAL are unchanged. The simulation now pushes data both ways.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>The first read of endpoint 1 is empty <span class="chip host">upstream</span></h3>
+      <div class="body">
+        <p>Whenever its FIFO is empty, the bridge marks endpoint 1's packet as complete, so after reset the first IN request gets a zero-length packet. A real host simply polls again.</p>
+        <p class="fix"><b>Fix:</b> none needed; the testbench expects the empty packet first.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>Status lines came back as input <span class="chip host">host tty</span></h3>
+      <div class="body">
+        <p>Diagnostic lines printed while waiting for the first key were echoed back by the Linux tty, still in its default cooked mode, and the reader took them as typing.</p>
+        <p class="fix"><b>Fix:</b> nothing is sent before the first key; the lines stay behind <code>SCHEME_WAIT_STATUS</code>.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>The paste still garbled <span class="chip fpga">gateware</span></h3>
+      <div class="body">
+        <p>With the new core working, a big paste still overflowed the 512-byte FIFO: the host delivers data faster than the M4 drains it.</p>
+        <p class="fix"><b>Fix:</b> the bridge pulls a byte from the 32-byte packet buffer only when the FIFO has room for four. When the FIFO fills, draining pauses, the packet waits in the buffer, and the USB core answers the host's next packet with NAK until there's room. The host retries automatically.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3><code>unbound variable: genm</code> <span class="chip bug">open</span></h3>
+      <div class="body">
+        <p>Two bytes go missing at offsets 5118–5119 on every interactive paste. Counters show they never reach the gateware; written straight to the port, the same file arrives complete.</p>
+        <p class="fix"><b>Next:</b> test the host links one at a time: <code>screen</code> versus <code>picocom</code> or <code>tio</code>, a paste on the Pi's own console, and the terminal app.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Measurements part two -->
+<section>
+  <div class="head">
+    <div class="eyebrow">On the board and in the tools</div>
+    <h2>Measurements, part two</h2>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Check</th><th>Result</th><th>Reading</th></tr></thead>
+      <tbody>
+        <tr><td><code>(bench-fpga-read …)</code></td><td class="num">112 cycles</td><td>One FPGA register read: 2.3 µs at 48.15 MHz, against 6 cycles for SRAM.</td></tr>
+        <tr><td>Timing, 12 MHz clock</td><td class="num">+21 ns</td><td>Slack in the clock domain that now holds the protocol engine, the FIFOs and the transmitter.</td></tr>
+        <tr><td>Timing, 48 MHz clock</td><td class="num">−13.6 ns</td><td>Only in a debug counter; the receiver meets timing.</td></tr>
+        <tr><td>Simulation</td><td class="num">0 failures</td><td>Enumeration, data both ways, flow control with 17 packets against a full FIFO.</td></tr>
+        <tr><td>Paste through <code>screen</code></td><td class="num">6,249 / 6,251</td><td>Bytes reaching the FIFO; 136 of 137 checks pass.</td></tr>
+        <tr><td><code>tools/paste_test.py</code></td><td class="num">137 / 137</td><td>1 KB writes straight to the port; 89 s, paced by the REPL.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
 <!-- Files -->
 <section>
   <div class="head">
@@ -360,12 +542,19 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
       <tbody>
         <tr><td><code>src/scheme.c</code>, <code>inc/scheme.h</code></td><td><span class="chip ok">new</span></td><td>Portable interpreter core and its API</td></tr>
         <tr><td><code>inc/scheme_port.h</code></td><td><span class="chip ok">new</span></td><td>FreeRTOS malloc hooks, root-stack and line-length sizes</td></tr>
-        <tr><td><code>src/scheme_task.c</code></td><td><span class="chip ok">new</span></td><td>USB console I/O, board primitives, the task, temporary LED checkpoints</td></tr>
+        <tr><td><code>src/scheme_task.c</code></td><td><span class="chip ok">new</span></td><td>USB console I/O, RX interrupt and 8 KB ring, board and diagnostic primitives (<code>fifo-stats</code>, <code>usb-dbg</code>, <code>bench-fpga-read</code>), the task</td></tr>
         <tr><td><code>tests.scm</code>, <code>README.rst</code></td><td><span class="chip ok">new</span></td><td>Regression suite; build, sizing and language notes</td></tr>
-        <tr><td><code>src/main.c</code></td><td><span class="chip host">changed</span></td><td><code>scheme_start_task()</code> instead of the CLI; <code>const</code> bitstream extern</td></tr>
+        <tr><td><code>src/main.c</code></td><td><span class="chip host">changed</span></td><td><code>scheme_start_task()</code> instead of the CLI; <code>const</code> bitstream extern; weak <code>qomu_fpga_pads_init()</code> call before <code>load_fpga()</code></td></tr>
         <tr><td><code>inc/Fw_global_config.h</code></td><td><span class="chip host">changed</span></td><td><code>SCHEME_HEAP_BYTES</code> (48 KB), <code>SCHEME_STACK_BYTES</code> (20 KB)</td></tr>
         <tr><td><code>inc/FreeRTOSConfig.h</code></td><td><span class="chip host">changed</span></td><td><code>INCLUDE_uxTaskGetStackHighWaterMark</code> for <code>(stack-free)</code></td></tr>
-        <tr><td><code>fpga/qomu_fpga.c</code></td><td><span class="chip host">changed</span></td><td>Bitstream is <code>const</code></td></tr>
+        <tr><td><code>fpga/qomu_fpga.c</code></td><td><span class="chip fpga">generated</span></td><td>Open-toolchain bitstream (18,990 words, <code>const</code>); the SpDE original is kept as <code>qomu_fpga.c.spde</code></td></tr>
+        <tr><td><code>fpga/qomu_fpga_iomux.c</code></td><td><span class="chip fpga">generated</span></td><td><code>qomu_fpga_pads_init()</code>: pad setup for the USB pins</td></tr>
+        <tr><td><code>gateware/docker/Dockerfile</code></td><td><span class="chip ok">new</span></td><td>Image <code>symbiflow-qomu</code>: ql_symbiflow v1.3.0 with pinned packages</td></tr>
+        <tr><td><code>gateware/usb2serial/rtl/</code></td><td><span class="chip ok">new</span></td><td>The ported usb2serial core; every change is listed in <code>gateware/usb2serial/README.md</code></td></tr>
+        <tr><td><code>gateware/usb2serial/qomu.pcf</code>, <code>qomu.sdc</code></td><td><span class="chip ok">new</span></td><td>USB pins and the two clocks</td></tr>
+        <tr><td><code>gateware/usb2serial/build.sh</code>, <code>iomux2c.py</code></td><td><span class="chip ok">new</span></td><td>Check, compile, install and simulate; pad script to C</td></tr>
+        <tr><td><code>gateware/usb2serial/sim/</code></td><td><span class="chip ok">new</span></td><td>Testbench: enumeration, data both ways, flow control</td></tr>
+        <tr><td><code>tools/paste_test.py</code></td><td><span class="chip ok">new</span></td><td>Sends a file straight to the port and reports byte counts</td></tr>
         <tr><td><code>GCC_Project/qomu.ld</code></td><td><span class="chip host">changed</span></td><td><code>rom</code> 188 KB, <code>ram</code> from <code>0x2002F000</code></td></tr>
         <tr><td><code>GCC_Project/config.mk</code></td><td><span class="chip host">changed</span></td><td>Make 4.4 fix</td></tr>
       </tbody>
@@ -389,8 +578,16 @@ python3 ./tinyfpga-programmer-gui.py --port /dev/ttyACM0 \
     --m4app ../qomu_apps/qomu_scheme/GCC_Project/output/qomu_scheme.bin --mode m4
 
 # replug (app enumerates as 1d50:6141), then
-screen /dev/ttyACM0        # press Enter for the banner and "&gt; "</code></pre>
-  <p class="cap">Flashing only writes the m4app region. To go back, flash <code>qomu_apps/qomu-initial-binaries/qomu_helloworldsw.bin</code> the same way.</p>
+screen /dev/ttyACM0        # press Enter for the banner and "&gt; "
+
+# Mac: rebuild the gateware (image built once from gateware/docker)
+docker run --rm --platform linux/amd64 -v ~/src/qorc-sdk:/qorc-sdk symbiflow-qomu bash -c \
+  'S=/qorc-sdk/qomu_apps/qomu_scheme/gateware/usb2serial/build.sh; bash $S sim &amp;&amp; bash $S'
+# writes fpga/qomu_fpga.c and fpga/qomu_fpga_iomux.c; commit, then build on the Pi
+
+# Pi: load a file without the terminal in the way (screen closed)
+python3 tools/paste_test.py tests.scm</code></pre>
+  <p class="cap">Flashing only writes the m4app region. To go back, flash <code>qomu_apps/qomu-initial-binaries/qomu_helloworldsw.bin</code> the same way. To return to the SpDE gateware but keep Scheme, copy <code>fpga/qomu_fpga.c.spde</code> over <code>fpga/qomu_fpga.c</code>, delete <code>fpga/qomu_fpga_iomux.c</code> (its call in <code>main()</code> is weak) and rebuild.</p>
 </section>
 
 <!-- Next -->
@@ -400,16 +597,16 @@ screen /dev/ttyACM0        # press Enter for the banner and "&gt; "</code></pre>
     <h2>Next steps</h2>
   </div>
   <ol class="todo">
+    <li>Find the two bytes lost on interactive pastes: <code>screen</code> versus <code>picocom</code> or <code>tio</code>, a paste on the Pi's own console, and the terminal app.</li>
+    <li>Gateware tidy-up: the line-transition debug counter misses 48 MHz timing; the LED ladder and <code>[wait]</code> lines should go or stay behind flags.</li>
     <li><code>do</code> (and so <code>blink</code>) should return nothing instead of <code>#f</code>.</li>
-    <li>Discard input that arrives before the first keypress (the echoed boot-banner junk).</li>
-    <li>Multi-line pastes lose characters while the REPL is busy: the 32-byte typeahead buffer drops anything beyond it. Stop reading when the buffer is full, so the bytes wait in the FPGA FIFO, and make the buffer bigger.</li>
-    <li>Remove the LED checkpoints, or keep them behind a build flag.</li>
-    <li>Speed: cache global lookups, allocate fewer cells per call, <code>-O2</code> for <code>scheme.c</code>, and maybe C10 at 72 MHz once the USB core is confirmed unaffected.</li>
+    <li>Speed: cache global lookups, allocate fewer cells per call, <code>-O2</code> for <code>scheme.c</code>, maybe C10 at 72 MHz. The test suite takes 89 s to run.</li>
+    <li>Fewer FPGA reads per byte: let the interrupt read the FIFO's fill level once and then drain that many bytes.</li>
     <li>Bigger ideas: save and load Scheme source in the spare SPI flash; primitives for registers in your own FPGA logic.</li>
   </ol>
 </section>
 
-<footer>Written by Claude with Andrey Vyetchnost, 22 November 2026. A companion to <em>Qomu App Anatomy</em>.</footer>
+<footer>Written by Claude with Andrey Vyetchnost, 22–24 November 2026. A companion to <em>Qomu App Anatomy</em>.</footer>
 </div>
 </body>
 </html>
