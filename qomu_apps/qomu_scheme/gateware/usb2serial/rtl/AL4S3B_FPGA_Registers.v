@@ -62,6 +62,7 @@ module AL4S3B_FPGA_Registers (
                         clk_sel_o,
                         usb_pid_o,
                         usb_dbg_i,
+                        fifo_dbg_i,
 
                          //
                          // Misc
@@ -82,6 +83,8 @@ parameter                FPGA_SCRATCH_REG_ADR        =  10'h008;   // 0x08
 parameter                FPGA_CLKCTRL_REG_ADR        =  10'h00C;   // 0x0C
 parameter                FPGA_USBPID_REG_ADR         =  10'h010;   // 0x10
 parameter                FPGA_DBG0_REG_ADR           =  10'h014;   // 0x14 qomu_scheme: {pkt starts, line transitions}
+parameter                FPGA_DBG2_REG_ADR           =  10'h01C;   // 0x1C qomu_scheme: {u2m pops, u2m pushes}
+parameter                FPGA_DBG3_REG_ADR           =  10'h020;   // 0x20 qomu_scheme: {m2u pushes, u2m pushes refused (full)}
 parameter                FPGA_DBG1_REG_ADR           =  10'h018;   // 0x18 qomu_scheme: {tx packets, valid rx packets}
 
 // USB to M4, and M4 to USB registers
@@ -128,6 +131,7 @@ output          Interrupt_o;
 output          clk_sel_o;
 output  [15:0]  usb_pid_o;
 input   [63:0]  usb_dbg_i;
+input   [63:0]  fifo_dbg_i;
 
 //
 // Misc
@@ -270,6 +274,8 @@ always @(*)
     FPGA_USBPID_REG_ADR[ADDRWIDTH:2]      : WBs_DAT_o <= { 16'h0, usb_pid_reg }; 
     FPGA_DBG0_REG_ADR[ADDRWIDTH:2]        : WBs_DAT_o <= usb_dbg_i[31:0];
     FPGA_DBG1_REG_ADR[ADDRWIDTH:2]        : WBs_DAT_o <= usb_dbg_i[63:32];
+    FPGA_DBG2_REG_ADR[ADDRWIDTH:2]        : WBs_DAT_o <= fifo_dbg_i[31:0];
+    FPGA_DBG3_REG_ADR[ADDRWIDTH:2]        : WBs_DAT_o <= fifo_dbg_i[63:32];
     FPGA_U2M_FIFO_FLAGS[ADDRWIDTH:2]      : WBs_DAT_o <= { 28'b0, FIFO_u2m_popflag };
     FPGA_U2M_FIFO_RDATA[ADDRWIDTH:2]      : WBs_DAT_o <= { 24'b0, FIFO_u2m_dout };
     FPGA_M2U_FIFO_FLAGS[ADDRWIDTH:2]      : WBs_DAT_o <= { 28'b0, FIFO_m2u_pushflag };

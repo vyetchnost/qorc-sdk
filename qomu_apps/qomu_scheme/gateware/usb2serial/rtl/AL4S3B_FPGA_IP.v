@@ -279,6 +279,15 @@ assign clk_12mhz = clk_12mhz_i;
 
 // USB-Serial Bridge
 wire    [63:0]  usb_dbg_counters;   // qomu_scheme debug counters
+// qomu_scheme: byte counters along the serial data path (wrap at 16 bits)
+reg     [15:0]  dbg_u2m_push = 0, dbg_u2m_pop = 0, dbg_u2m_drop = 0, dbg_m2u_push = 0;
+always @(posedge clk_12mhz) begin
+    if (FIFO_u2m_push)                  dbg_u2m_push <= dbg_u2m_push + 1'b1;
+    if (FIFO_u2m_push && FIFO_u2m_full) dbg_u2m_drop <= dbg_u2m_drop + 1'b1;
+    if (FIFO_u2m_pop)                   dbg_u2m_pop  <= dbg_u2m_pop  + 1'b1;
+    if (FIFO_m2u_push)                  dbg_m2u_push <= dbg_m2u_push + 1'b1;
+end
+wire    [63:0]  fifo_dbg_counters = { dbg_m2u_push, dbg_u2m_drop, dbg_u2m_pop, dbg_u2m_push };
 
 usb2m4_serial  u_usb2m4_serial  ( 
     .clk_48mhz          ( clk_48mhz_i ),
@@ -402,6 +411,7 @@ AL4S3B_FPGA_Registers #(
     .clk_sel_o              ( clk_sel_o             ),
     .usb_pid_o              ( usb_pid               ),
     .usb_dbg_i              ( usb_dbg_counters      ),
+    .fifo_dbg_i             ( fifo_dbg_counters     ),
 
     //
     // Misc

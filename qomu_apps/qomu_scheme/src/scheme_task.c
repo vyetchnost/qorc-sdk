@@ -69,6 +69,7 @@ static volatile uint32_t rx_tail;           /* written by the REPL, and the ISR 
 static volatile int rx_break;
 static volatile uint32_t rx_dropped;        /* bytes lost to a full ring */
 static volatile uint32_t rx_irqs;           /* ISR entries (diagnostics) */
+static volatile uint32_t rx_total;          /* bytes taken from the FIFO (diagnostics) */
 
 static void usb_rx_isr(void)
 {
@@ -77,6 +78,7 @@ static void usb_rx_isr(void)
     rx_irqs++;
     while (HAL_usbserial_dataavailable()) {
         int c = HAL_usbserial_getc() & 0xff;
+        rx_total++;
         uint32_t next = (rx_head + 1) % SCHEME_RX_BYTES;
         if (c == 3) {
             rx_tail = rx_head;              /* ^C cancels everything still queued */
@@ -415,6 +417,30 @@ static scm_obj p_usb_dbg(scm_obj args)
     return scm_from_cstr(buf);
 }
 
+/* (fifo-stats) -> "push pop full m2u isr": gateware byte counters along the
+ * serial path (16-bit, wrapping) and the firmware's own count of bytes taken
+ * by the RX interrupt (low 16 bits). #f with gateware that lacks them. */
+#define USB_DBG2 0x1C
+#define USB_DBG3 0x20
+static scm_obj p_fifo_stats(scm_obj args)
+{
+    uint32_t d2 = *USB_REG(USB_DBG2), d3 = *USB_REG(USB_DBG3), v[5];
+    char buf[64], *p = buf;
+    int i;
+    (void)args;
+    if (d2 == FPGA_UNDEF_REG) return SCM_FALSE;
+    v[0] = d2 & 0xffff; v[1] = d2 >> 16; v[2] = d3 & 0xffff; v[3] = d3 >> 16;
+    v[4] = rx_total & 0xffff;
+    for (i = 0; i < 5; i++) {
+        char d[8]; int n = 0; uint32_t x = v[i];
+        do { d[n++] = (char)('0' + x % 10); x /= 10; } while (x);
+        if (i) *p++ = ' ';
+        while (n) *p++ = d[--n];
+    }
+    *p = 0;
+    return scm_from_cstr(buf);
+}
+
 /* (rx-dropped) -> console input bytes lost because the input ring was full */
 static scm_obj p_rx_dropped(scm_obj args)
 {
@@ -510,6 +536,7 @@ static void scheme_task(void *arg)
     scm_defprim("bench-fpga-read", p_bench_fpga_read, 1, 1);
     scm_defprim("usb-rx-probe", p_usb_rx_probe, 1, 1);
     scm_defprim("usb-dbg", p_usb_dbg, 0, 0);
+    scm_defprim("fifo-stats", p_fifo_stats, 0, 0);
 #if INCLUDE_uxTaskGetStackHighWaterMark
     scm_defprim("stack-free", p_stack_free, 0, 0);
 #endif
