@@ -443,21 +443,23 @@ static scm_obj p_usb_dbg(scm_obj args)
     return scm_from_cstr(buf);
 }
 
-/* (fifo-stats) -> "push pop full m2u isr": gateware byte counters along the
- * serial path (16-bit, wrapping) and the firmware's own count of bytes taken
- * by the RX interrupt (low 16 bits). #f with gateware that lacks them. */
+/* (fifo-stats) -> "push pop full m2u isr irqs": gateware byte counters along
+ * the serial path (16-bit, wrapping), the firmware's own count of bytes taken
+ * by the RX interrupt and of RX interrupts (low 16 bits). #f with gateware
+ * that lacks them. */
 #define USB_DBG2 0x1C
 #define USB_DBG3 0x20
 static scm_obj p_fifo_stats(scm_obj args)
 {
-    uint32_t d2 = *USB_REG(USB_DBG2), d3 = *USB_REG(USB_DBG3), v[5];
+    uint32_t d2 = *USB_REG(USB_DBG2), d3 = *USB_REG(USB_DBG3), v[6];
     char buf[64], *p = buf;
     int i;
     (void)args;
     if (d2 == FPGA_UNDEF_REG) return SCM_FALSE;
     v[0] = d2 & 0xffff; v[1] = d2 >> 16; v[2] = d3 & 0xffff; v[3] = d3 >> 16;
     v[4] = rx_total & 0xffff;
-    for (i = 0; i < 5; i++) {
+    v[5] = rx_irqs & 0xffff;
+    for (i = 0; i < 6; i++) {
         char d[8]; int n = 0; uint32_t x = v[i];
         do { d[n++] = (char)('0' + x % 10); x /= 10; } while (x);
         if (i) *p++ = ' ';

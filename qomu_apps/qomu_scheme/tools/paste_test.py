@@ -68,14 +68,15 @@ os.close(fd)
 
 open(a.log, "wb").write(out)
 text = out.decode("latin-1")
-stats = [l for l in text.replace("\r", "").split("\n") if l.startswith('"') and l.count(" ") == 4]
+stats = [l for l in text.replace("\r", "").split("\n") if l.startswith('"') and l.count(" ") in (4, 5)]
 print(f"sent {len(data)} bytes in chunks of {a.chunk} ({time.time() - t0:.1f} s), log: {a.log}")
 if len(stats) >= 2:
     s0 = [int(x) for x in stats[0].strip('"').split()]
     s1 = [int(x) for x in stats[-1].strip('"').split()]
     d = [(y - x) & 0xffff for x, y in zip(s0, s1)]
     print(f"fifo-stats delta: push {d[0]}  pop {d[1]}  full {d[2]}  isr {d[4]}"
-          f"   (expected push {len(data) + 13})")
+          + (f"  irqs {d[5]}" if len(d) > 5 else "")
+          + f"   (expected push {len(data) + 13})")
 for l in text.replace("\r", "").split("\n"):
     if l.startswith("Error") or l.startswith("tests:"):
         print("  " + l)
