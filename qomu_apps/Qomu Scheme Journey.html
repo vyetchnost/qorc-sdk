@@ -124,7 +124,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
 <header>
   <div class="eyebrow">qorc-sdk · Qomu · EOS S3 · 22–24 Nov 2026</div>
   <h1>Qomu Scheme: from question to REPL</h1>
-  <p class="lede">How a Scheme interpreter went from "do you think we can?" to a working prompt on the Qomu's USB-serial console in one morning: what we built, how it fits into the SDK, and every bug we hit on the way to the first <code>&gt;</code>. <a href="#part-two">Part two</a> follows a paste problem down into the eFPGA: the USB core rebuilt from source with the open toolchain, three gateware bugs, RX flow control, and measurements that traced the last two missing bytes to <code>screen</code>.</p>
+  <p class="lede">How a Scheme interpreter went from "do you think we can?" to a working prompt on the Qomu's USB-serial console in one morning: what we built, how it fits into the SDK, and every bug we hit on the way to the first <code>&gt;</code>. <a href="#part-two">Part two</a> follows a paste problem down into the eFPGA: the USB core rebuilt from source with the open toolchain, three gateware bugs, RX flow control, and measurements that traced the last two missing bytes to <code>screen</code>. <a href="#part-three">Part three</a> makes the interpreter 3.3× faster and tidies up the gateware until every path meets timing.</p>
   <div class="facts">
     <div class="fact"><b>Written from scratch</b><span>A ~2,400-line portable C99 interpreter. TinyScheme wasn't reachable from the sandbox, so we wrote our own.</span></div>
     <div class="fact"><b>Built on helloworld</b><span>Same USB-serial gateware and FreeRTOS startup. The CLI task is replaced by a Scheme task.</span></div>
@@ -535,6 +535,94 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
   </div>
 </section>
 
+
+<!-- ================= PART THREE ================= -->
+<section id="part-three">
+  <div class="head">
+    <div class="eyebrow">Part three · Tuesday</div>
+    <h2>Faster, and tidy</h2>
+  </div>
+  <div class="prose">
+    <p>With pasting solved, tagged <code>qomu_scheme_v0.1</code>, Tuesday went to speed and loose ends. <code>(fib 20)</code> took 3,011 ms on the board. Profiling on the host, with the same 4,096 cells so the garbage collector runs as often, showed where the time went. Each call allocated about nine cells, six of them just to pass two numbers to <code>+</code>, <code>-</code> or <code>&lt;</code>, and every constant and variable paid for a full <code>eval</code> call. Every change was checked against the original interpreter's output, byte for byte, in plain, sanitizer and GC-on-every-allocation builds.</p>
+  </div>
+  <ul class="stack">
+    <li><div class="dot host"></div><div class="what"><b>Tagged <code>qomu_scheme_v0.1</code></b><span>Section-by-section pastes through <code>screen</code>, and full-file pastes through picocom, work reliably.</span></div><div class="when">10:14</div></li>
+    <li><div class="dot"></div><div class="what"><b>Baseline: 3,011 ms</b><span><code>(let ((t (ms))) (fib 20) (- (ms) t))</code>, within 10 ms run to run.</span></div><div class="when">10:26</div></li>
+    <li><div class="dot win"></div><div class="what"><b>Fast primitives and inline leaves: 1,438 ms</b><span>Common primitives get their arguments in C variables; constants and variables skip the full <code>eval</code>.</span></div><div class="when">10:37</div></li>
+    <li><div class="dot win"></div><div class="what"><b>Cheaper frames, one-compare stack check, <code>-O2</code>: ~910 ms</b><span>3.3× faster than the morning. The image grew to 175,296 of 192,512 bytes.</span></div><div class="when">10:45</div></li>
+    <li><div class="dot"></div><div class="what"><b>Small fixes</b><span><code>do</code> and <code>blink</code> return no value. The LEDs show plain green while waiting; the USB diagnostics sit behind <code>SCHEME_USB_DIAG</code>.</span></div><div class="when">10:55</div></li>
+    <li><div class="dot win"></div><div class="what"><b>Every gateware path meets timing</b><span>The debug counter moved to the 12 MHz domain, and a 4% tighter constraint gave placement room: the 48 MHz critical path is 19.68 ns against 20.83.</span></div><div class="when">12:57</div></li>
+    <li><div class="dot win"></div><div class="what"><b>Batched receive interrupt</b><span>One FPGA read per byte instead of three. The full test suite through <code>paste_test.py</code> takes 52.9 s, down from 89 s on Monday.</span></div><div class="when">13:17</div></li>
+  </ul>
+</section>
+
+<section>
+  <div class="head">
+    <div class="eyebrow">scheme.c · scheme_task.c</div>
+    <h2>What made it faster</h2>
+  </div>
+  <div class="cols">
+    <div class="card">
+      <h3>Fast primitive path</h3>
+      <ul>
+        <li><code>+ - * &lt; &gt; = &lt;= &gt;=</code> with two small integers, and <code>car cdr cons null? pair? not eq? zero?</code>, are computed straight from C variables.</li>
+        <li>Primitives are recognized by function pointer, so the cell layout is unchanged.</li>
+        <li>Floats, overflow and wrong types fall back to the generic call, so results and error messages stay identical.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Inline leaves</h3>
+      <ul>
+        <li>Numbers, variables and self-evaluating data are handled at the call site, without the full <code>eval</code> entry, stack check and polling.</li>
+        <li>Looked-up values still go on the GC root stack: a later argument could <code>set!</code> the variable they came from.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Cheaper frames</h3>
+      <ul>
+        <li>A call made by the evaluator reuses its freshly built argument list as the frame's binding list: one new cell per parameter instead of two.</li>
+        <li>Lists that may be shared, from <code>apply</code> or macro arguments (source code), are never modified.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Build and stack check</h3>
+      <ul>
+        <li><code>SCM_OPTIMIZE_SPEED</code> in <code>scheme_port.h</code> compiles <code>scheme.c</code> with <code>-O2</code> through a pragma; the rest of the firmware stays at <code>-Os</code>.</li>
+        <li>The recursion-depth check is one comparison against a precomputed limit.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Batched receive interrupt</h3>
+      <ul>
+        <li>The FIFO's pop flag guarantees a minimum fill level (1, 2, 4 … 512 bytes). The interrupt reads the flags once, then pops that many bytes with one read each.</li>
+        <li>Before, the HAL read the flags twice per byte, then the data: 7 µs per byte instead of 2.3.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="head">
+    <div class="eyebrow">Before and after</div>
+    <h2>Measurements, part three</h2>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Check</th><th>Before</th><th>After</th><th>Reading</th></tr></thead>
+      <tbody>
+        <tr><td><code>(fib 20)</code> on the board</td><td class="num">3,011 ms</td><td class="num">~910 ms</td><td>3.3× faster; 1,438 ms after the first two changes.</td></tr>
+        <tr><td><code>(fib 20)</code>, host instructions</td><td class="num">50.7 M</td><td class="num">23.6 M</td><td>callgrind, startup excluded, before <code>-O2</code>.</td></tr>
+        <tr><td><code>tests.scm</code>, host instructions</td><td class="num">1,036 M</td><td class="num">539 M</td><td>The gain isn't specific to <code>fib</code>.</td></tr>
+        <tr><td>Full suite via <code>paste_test.py</code></td><td class="num">89 s</td><td class="num">52.9 s</td><td>Paced by the REPL through flow control; 137 of 137.</td></tr>
+        <tr><td>Image size</td><td class="num">160,344 B</td><td class="num">175,296 B</td><td>Since Sunday's first build: +15 KB, mostly <code>-O2</code>; 17 KB of <code>rom</code> left.</td></tr>
+        <tr><td>48 MHz critical path</td><td class="num">21.37 ns</td><td class="num">19.68 ns</td><td>Against 20.83 ns; the 12 MHz side has 15 ns of slack.</td></tr>
+        <tr><td>Receive interrupts</td><td class="num">—</td><td class="num">4 per 50 bytes</td><td>New sixth value of <code>(fifo-stats)</code>; quiet while <code>fib</code> runs.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cap">Between builds, <code>(fib 20)</code> moved between 905 and 953 ms with no interpreter change: code alignment shifts when the image layout does. On this chip, a few percent between builds means little; compare within one build.</p>
+</section>
+
 <!-- Files -->
 <section>
   <div class="head">
@@ -546,8 +634,8 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
       <thead><tr><th>File</th><th>Status</th><th>What</th></tr></thead>
       <tbody>
         <tr><td><code>src/scheme.c</code>, <code>inc/scheme.h</code></td><td><span class="chip ok">new</span></td><td>Portable interpreter core and its API</td></tr>
-        <tr><td><code>inc/scheme_port.h</code></td><td><span class="chip ok">new</span></td><td>FreeRTOS malloc hooks, root-stack and line-length sizes</td></tr>
-        <tr><td><code>src/scheme_task.c</code></td><td><span class="chip ok">new</span></td><td>USB console I/O, RX interrupt and 8 KB ring, board and diagnostic primitives (<code>fifo-stats</code>, <code>usb-dbg</code>, <code>bench-fpga-read</code>), the task</td></tr>
+        <tr><td><code>inc/scheme_port.h</code></td><td><span class="chip ok">new</span></td><td>FreeRTOS malloc hooks, root-stack and line-length sizes; <code>SCM_OPTIMIZE_SPEED</code> (<code>-O2</code> for <code>scheme.c</code>)</td></tr>
+        <tr><td><code>src/scheme_task.c</code></td><td><span class="chip ok">new</span></td><td>USB console I/O, batched RX interrupt and 8 KB ring, board and diagnostic primitives (<code>fifo-stats</code>, <code>usb-dbg</code>, <code>bench-fpga-read</code>), the task; <code>SCHEME_USB_DIAG</code> for bring-up diagnostics</td></tr>
         <tr><td><code>tests.scm</code>, <code>README.rst</code></td><td><span class="chip ok">new</span></td><td>Regression suite; build, sizing and language notes</td></tr>
         <tr><td><code>src/main.c</code></td><td><span class="chip host">changed</span></td><td><code>scheme_start_task()</code> instead of the CLI; <code>const</code> bitstream extern; weak <code>qomu_fpga_pads_init()</code> call before <code>load_fpga()</code></td></tr>
         <tr><td><code>inc/Fw_global_config.h</code></td><td><span class="chip host">changed</span></td><td><code>SCHEME_HEAP_BYTES</code> (48 KB), <code>SCHEME_STACK_BYTES</code> (20 KB)</td></tr>
@@ -602,11 +690,11 @@ python3 tools/paste_test.py tests.scm</code></pre>
     <h2>Next steps</h2>
   </div>
   <ol class="todo">
-    <li>Gateware tidy-up: the line-transition debug counter misses 48 MHz timing; the LED ladder and <code>[wait]</code> lines should go or stay behind flags.</li>
-    <li><code>do</code> (and so <code>blink</code>) should return nothing instead of <code>#f</code>.</li>
-    <li>Speed: cache global lookups, allocate fewer cells per call, <code>-O2</code> for <code>scheme.c</code>, maybe C10 at 72 MHz. The test suite takes 89 s to run.</li>
-    <li>Fewer FPGA reads per byte: let the interrupt read the FIFO's fill level once and then drain that many bytes.</li>
-    <li>Bigger ideas: save and load Scheme source in the spare SPI flash; primitives for registers in your own FPGA logic.</li>
+    <li><b>72 MHz side quest:</b> restore the fabric's ÷1.5 divider and clock switch in the gateware, so C21 can run at 72 MHz while the USB core still sees 48. Then raise the oscillator and C10 to 72 MHz and pass <code>fUse72MHz</code>. About 1.5× on everything.</li>
+    <li>Save and load Scheme source in the spare SPI flash, so programs survive a power cycle.</li>
+    <li>Primitives for registers in your own FPGA logic, now that the gateware builds from source.</li>
+    <li>More interpreter speed: profile real programs; cache global lookups; fewer cells for <code>let</code> and closures.</li>
+    <li>Watch the <code>rom</code> budget: 17 KB left. If it runs short, move the <code>rom</code>/<code>ram</code> boundary again or limit <code>-O2</code> to the hot functions.</li>
   </ol>
 </section>
 
