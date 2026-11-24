@@ -536,6 +536,14 @@ static void scheme_task(void *arg)
     board_led(LED_GREEN, 0);
     board_led(LED_BLUE, 0);
 
+    /* The host side can send stray bytes when the port is opened; let them
+     * arrive, then drop them together with the wake-up key. */
+    vTaskDelay(150);
+    taskENTER_CRITICAL();
+    rx_tail = rx_head;
+    rx_break = 0;
+    taskEXIT_CRITICAL();
+
     scm_puts("\nQomu Scheme - ");
     scm_display(scm_from_int((int64_t)scm_free_cells()));
     scm_puts(" cells free. Type (help) for board commands.\n");

@@ -118,7 +118,16 @@ module usb_m4_bridge_ep (
   ////////////////////////////////////////////////////////////////////////////////
   assign out_ep_req = out_ep_data_avail;
   //assign out_ep_data_get = (get_spi_out_data || get_cmd_out_data) && out_ep_grant; 
-  assign out_ep_data_get = out_ep_grant; 
+  // qomu_scheme: RX flow control. Only pull a byte out of the OUT endpoint
+  // buffer when the u2m FIFO has room for it. When the FIFO fills, draining
+  // pauses, the packet stays in the endpoint buffer and usb_fs_out_pe NAKs the
+  // host's next OUT until the M4 has read enough. Pushes trail the get by two
+  // clocks (out_ep_data_*_r1, FIFO_out_we), so ask for at least 4 free bytes:
+  // push flag 0 = full, F = 1 free, E = 2..3 free.
+  wire u2m_room_ok = !(FIFO_u2m_pushflag == 4'h0 ||
+                       FIFO_u2m_pushflag == 4'hF ||
+                       FIFO_u2m_pushflag == 4'hE);
+  assign out_ep_data_get = out_ep_grant && u2m_room_ok;
   
   reg in_ep_req_i = 0;
   always @(posedge clk) in_ep_req_i <= (spi_has_more_in_bytes || spi_put_last_in_byte) && in_ep_data_free;

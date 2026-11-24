@@ -122,7 +122,7 @@ module top_tb;
     task wb_expect;
       input [16:0]  addr;
       input [31:0]  value;
-      input [8*24:1] what;
+      input [8*40:1] what;
       reg   [31:0]  got;
     begin
       wb_read(addr, got);
@@ -620,6 +620,11 @@ module top_tb;
     endtask
 	
 
+    integer p, k, n, bad;
+    reg tog;
+    reg [1023:0] pkt;
+    reg [31:0] got;
+
     initial begin
         if ($test$plusargs("vcd")) begin
             $dumpfile("usb_enum_tb.vcd");
@@ -695,6 +700,50 @@ module top_tb;
         @(negedge clk_12mhz);
         `assert_true("rx interrupt drops when drained", !dut.u_AL4S3B_FPGA_IP.Interrupt_o)
 
+        // ---- RX flow control: more than the FIFO holds, with the M4 not reading
+        $display("== flow control: 17 x 32-byte OUT packets, M4 not reading");
+        tog = 1;                                   // 'ab' above was DATA0
+        for (p = 0; p < 17; p = p + 1) begin
+          pkt = 0;
+          for (k = 0; k < 32; k = k + 1) pkt[k*8 +: 8] = (p*32 + k) & 8'hff;
+          send_usb_out(8'h1e, 1);
+          if (tog) send_usb_data1(pkt, 256); else send_usb_data0(pkt, 256);
+          if (p < 16) begin
+            expect_usb_ack();
+            tog = !tog;
+          end else begin
+            $display("   packet 17 must be refused (FIFO and endpoint buffer full)");
+            expect_usb_nak();
+          end
+          #2000000;
+        end
+        wb_expect(17'h040, 32'hE, "u2m flags half+ full");
+        $display("== M4 reads 512 bytes, expect 0,1,2,..255,0,1,..");
+        bad = 0;
+        for (n = 0; n < 512; n = n + 1) begin
+          wb_read(17'h044, got);
+          if (got[7:0] !== (n & 8'hff)) begin
+            if (bad < 5) $display("%d ERROR (flow): byte %0d read %02x, expected %02x", $time, n, got[7:0], n & 8'hff);
+            bad = bad + 1;
+          end
+        end
+        if (bad) $display("%d ERROR (flow): %0d of 512 bytes wrong", $time, bad);
+        else     $display("   ok: 512 bytes in order");
+        wb_expect(17'h040, 32'h0, "u2m flags empty after 512");
+        $display("== host retries packet 17, expect ACK and bytes 0..31");
+        send_usb_out(8'h1e, 1);
+        if (tog) send_usb_data1(pkt, 256); else send_usb_data0(pkt, 256);
+        expect_usb_ack();
+        #4000000;
+        bad = 0;
+        for (n = 0; n < 32; n = n + 1) begin
+          wb_read(17'h044, got);
+          if (got[7:0] !== (n & 8'hff)) bad = bad + 1;
+        end
+        if (bad) $display("%d ERROR (flow): retried packet has %0d wrong bytes", $time, bad);
+        else     $display("   ok: retried packet delivered");
+        wb_expect(17'h040, 32'h0, "u2m flags empty at end");
+
         $display("== debug counters: line transitions %0d, packet starts %0d, valid packets %0d, tx packets %0d",
                  dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[15:0],  dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[31:16],
                  dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[47:32], dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[63:48]);
@@ -703,7 +752,7 @@ module top_tb;
     end
 
     initial begin
-        #400000000;
+        repeat (10) #400000000;            // 4 ms of simulated time
         $display("== TIMEOUT");
         $finish;
     end
