@@ -1109,11 +1109,27 @@ static scm_obj apply(scm_obj fn, scm_obj args)
     return v;
 }
 
+/*
+ * Evaluate x, handling leaves (numbers, variables, self-evaluating data) in
+ * line instead of paying for a full eval() call. Like eval(), the result is
+ * left on the gc stack (except fixnums, which aren't heap objects): a later
+ * argument could set! the variable it came from.
+ */
+static inline scm_obj eval_leaf(scm_obj x, scm_obj env)
+{
+    scm_obj v;
+    if (FIXNUMP(x)) return x;
+    if (x->type == T_PAIR) return eval(x, env);
+    v = x->type == T_SYM ? lookup(x, env) : x;
+    push(v);
+    return v;
+}
+
 static scm_obj evlist(scm_obj l, scm_obj env)
 {
     lbuf b;
     lb_init(&b);
-    for (; is_pair(l); l = CDR(l)) lb_add(&b, eval(CAR(l), env));
+    for (; is_pair(l); l = CDR(l)) lb_add(&b, eval_leaf(CAR(l), env));
     if (l != NIL) scm_error("bad argument list", l);
     return b.head;
 }
@@ -1189,7 +1205,63 @@ static int equal(scm_obj a, scm_obj b)
     }
 }
 
+/*
+ * Fast path for the commonest primitives called with one or two arguments:
+ * the evaluator passes the evaluated arguments in C variables instead of
+ * consing an argument list. Returns NULL when the case isn't covered (wrong
+ * types, overflow into floats, ...); the caller then builds the list and
+ * calls the primitive normally, so results and errors are unchanged.
+ */
+static scm_obj p_nullp(scm_obj a);
+static scm_obj p_pairp(scm_obj a);
+static scm_obj p_not(scm_obj a);
+static scm_obj p_zerop(scm_obj a);
+static scm_obj p_lt(scm_obj a);
+static scm_obj p_gt(scm_obj a);
+static scm_obj p_le(scm_obj a);
+static scm_obj p_ge(scm_obj a);
+static scm_obj p_numeq(scm_obj a);
+static scm_obj p_add(scm_obj a);
+static scm_obj p_sub(scm_obj a);
+static scm_obj p_mul(scm_obj a);
+static scm_obj p_eq(scm_obj a);
+static scm_obj p_cons(scm_obj a);
+static scm_obj p_car(scm_obj a);
+static scm_obj p_cdr(scm_obj a);
+
+static scm_obj prim_fast(scm_prim_fn f, int n, scm_obj a, scm_obj b)
+{
+    if (n == 1) {
+        if (f == p_car)   return is_pair(a) ? CAR(a) : NULL;
+        if (f == p_cdr)   return is_pair(a) ? CDR(a) : NULL;
+        if (f == p_nullp) return a == NIL ? TRUE_ : FALSE_;
+        if (f == p_pairp) return is_pair(a) ? TRUE_ : FALSE_;
+        if (f == p_not)   return a == FALSE_ ? TRUE_ : FALSE_;
+        if (f == p_zerop) return FIXNUMP(a) ? (a == FIX_MAKE(0) ? TRUE_ : FALSE_) : NULL;
+        return NULL;
+    }
+    if (f == p_cons) return cons(a, b);
+    if (f == p_eq) {                    /* same object, or equal integers */
+        if (a == b) return TRUE_;
+        if (!is_int(a) || !is_int(b)) return FALSE_;
+        return FIXNUMP(a) && FIXNUMP(b) ? FALSE_ : NULL;   /* boxed: compare values */
+    }
+    if (FIXNUMP(a) && FIXNUMP(b)) {
+        int32_t x = FIX_VAL(a), y = FIX_VAL(b);
+        if (f == p_add)   return scm_from_int((int64_t)x + y);
+        if (f == p_sub)   return scm_from_int((int64_t)x - y);
+        if (f == p_lt)    return x <  y ? TRUE_ : FALSE_;
+        if (f == p_numeq) return x == y ? TRUE_ : FALSE_;
+        if (f == p_gt)    return x >  y ? TRUE_ : FALSE_;
+        if (f == p_le)    return x <= y ? TRUE_ : FALSE_;
+        if (f == p_ge)    return x >= y ? TRUE_ : FALSE_;
+        if (f == p_mul)   return scm_from_int((int64_t)x * y);
+    }
+    return NULL;
+}
+
 #define RET(v) do { scm_obj r_ = (v); gctop = gc; push(r_); return r_; } while (0)
+
 
 static scm_obj eval(scm_obj x, scm_obj env)
 {
@@ -1224,7 +1296,7 @@ tail:
             scm_error("unquote outside quasiquote", x);
 
         case SF_IF: {
-            scm_obj c = eval(car_s(rest), env);
+            scm_obj c = eval_leaf(car_s(rest), env);
             rest = cdr_s(rest);
             if (c != FALSE_) { x = car_s(rest); goto tail; }
             rest = CDR(rest);
@@ -1395,13 +1467,24 @@ tail:
         }
     }
 
-    fn = eval(op, env);
+    fn = eval_leaf(op, env);
     if (!FIXNUMP(fn) && fn->type == T_MACRO) {
         scm_obj menv = bind_args(CAR(fn->u.clos.code), rest, fn->u.clos.env, fn);
         scm_obj exp = eval_body(CDR(fn->u.clos.code), menv);
         if (is_pair(exp)) { CAR(x) = CAR(exp); CDR(x) = CDR(exp); }
         else { CAR(x) = s_begin; CDR(x) = cons(exp, NIL); }
         goto tail;
+    }
+    if (!FIXNUMP(fn) && fn->type == T_PRIM && is_pair(rest)
+        && (CDR(rest) == NIL || (is_pair(CDR(rest)) && CDR(CDR(rest)) == NIL))) {
+        /* one or two arguments: try the fast path before consing a list */
+        int n = CDR(rest) == NIL ? 1 : 2;
+        scm_obj a0 = eval_leaf(CAR(rest), env), a1 = NIL, v;   /* stays rooted */
+        if (n == 2) a1 = eval_leaf(CAR(CDR(rest)), env);
+        v = prim_fast(fn->u.prim.fn, n, a0, a1);
+        if (v) RET(v);
+        args = n == 1 ? cons(a0, NIL) : cons(a0, cons(a1, NIL));
+        RET(call_prim(fn, args));
     }
     args = evlist(rest, env);
 
