@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Paste a file into the Qomu Scheme REPL straight through the serial port.
+
+Bypasses screen/terminal/ssh so host-side buffering can be ruled in or out.
+Wakes the REPL, reads (fifo-stats) before and after, sends the file with
+LF -> CR in chunks of --chunk bytes, and captures all output to a log.
+
+Run on the Pi with screen closed:
+    python3 tools/paste_test.py tests.scm --chunk 1024
+"""
+import argparse, os, select, sys, termios, threading, time, tty
+
+ap = argparse.ArgumentParser()
+ap.add_argument("file")
+ap.add_argument("--port", default="/dev/ttyACM0")
+ap.add_argument("--chunk", type=int, default=1024, help="bytes per write()")
+ap.add_argument("--gap", type=float, default=0.0, help="seconds between writes")
+ap.add_argument("--log", default="paste_test.log")
+ap.add_argument("--idle", type=float, default=4.0, help="stop after this many quiet seconds")
+a = ap.parse_args()
+
+fd = os.open(a.port, os.O_RDWR | os.O_NOCTTY)
+tty.setraw(fd)
+termios.tcflush(fd, termios.TCIOFLUSH)
+
+out = bytearray()
+last_rx = [time.time()]
+stop = [False]
+
+def reader():
+    while not stop[0]:
+        r, _, _ = select.select([fd], [], [], 0.2)
+        if r:
+            b = os.read(fd, 4096)
+            if b:
+                out.extend(b)
+                last_rx[0] = time.time()
+
+th = threading.Thread(target=reader, daemon=True)
+th.start()
+
+def send(b):
+    view = memoryview(b)
+    while view:
+        n = os.write(fd, view)
+        view = view[n:]
+
+def wait_quiet(t):
+    while time.time() - last_rx[0] < t:
+        time.sleep(0.1)
+
+data = open(a.file, "rb").read().replace(b"\r\n", b"\n").replace(b"\n", b"\r")
+
+send(b"\r")                       # wake key (the REPL discards it)
+time.sleep(0.5); wait_quiet(1.0)
+send(b"(fifo-stats)\r"); wait_quiet(1.0)
+t0 = time.time()
+for i in range(0, len(data), a.chunk):
+    send(data[i:i + a.chunk])
+    if a.gap:
+        time.sleep(a.gap)
+wait_quiet(a.idle)
+send(b"(fifo-stats)\r"); wait_quiet(1.0)
+stop[0] = True
+th.join()
+os.close(fd)
+
+open(a.log, "wb").write(out)
+text = out.decode("latin-1")
+stats = [l for l in text.replace("\r", "").split("\n") if l.startswith('"') and l.count(" ") == 4]
+print(f"sent {len(data)} bytes in chunks of {a.chunk} ({time.time() - t0:.1f} s), log: {a.log}")
+if len(stats) >= 2:
+    s0 = [int(x) for x in stats[0].strip('"').split()]
+    s1 = [int(x) for x in stats[-1].strip('"').split()]
+    d = [(y - x) & 0xffff for x, y in zip(s0, s1)]
+    print(f"fifo-stats delta: push {d[0]}  pop {d[1]}  full {d[2]}  isr {d[4]}"
+          f"   (expected push {len(data) + 13})")
+for l in text.replace("\r", "").split("\n"):
+    if l.startswith("Error") or l.startswith("tests:"):
+        print("  " + l)
