@@ -454,6 +454,10 @@ static const char board_prelude[] =
  * with both FIFO flag nibbles, the RX interrupt enable and count, bytes in
  * the input ring and the gateware USB counters. Seeing these lines at all
  * proves M4->USB works; typing should move u2m (FIFO) and then irq/ring. */
+#ifndef SCHEME_WAIT_STATUS
+#define SCHEME_WAIT_STATUS 0
+#endif
+#if SCHEME_WAIT_STATUS
 static void put_hex(uint32_t v, int digits)
 {
     while (digits--) q_putc("0123456789abcdef"[(v >> (4 * digits)) & 0xf]);
@@ -479,6 +483,7 @@ static void wait_status_line(void)
     }
     put_str("\r\n");
 }
+#endif /* SCHEME_WAIT_STATUS */
 
 static void scheme_task(void *arg)
 {
@@ -518,8 +523,12 @@ static void scheme_task(void *arg)
         unsigned tick = 0;
         while (!q_avail()) {
             usb_dbg_leds(tick++);
+#if SCHEME_WAIT_STATUS
+            /* Bring-up only: anything sent before a terminal opens the port
+             * is echoed back by the host tty (cooked mode) as fake input. */
             if (tick % 20 == 0)
-                wait_status_line();     /* temporary bring-up diagnostics */
+                wait_status_line();
+#endif
             vTaskDelay(50);
         }
     }
