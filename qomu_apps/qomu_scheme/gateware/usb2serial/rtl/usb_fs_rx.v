@@ -137,6 +137,13 @@ module usb_fs_rx (
       if (ls_trans) begin
           bit_phase <= 0;
 
+`ifdef USB_CLK72
+      // qomu_scheme: 36 MHz sample clock, 3 samples per bit (phases 0..2).
+      // The sample still lands two clocks after the detected transition,
+      // i.e. 1/3..2/3 of the way through the bit.
+      end else if (bit_phase == 2'd2) begin
+          bit_phase <= 0;
+`endif
       end else begin
           bit_phase <= bit_phase + 1;
       end

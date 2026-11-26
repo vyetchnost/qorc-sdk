@@ -80,6 +80,11 @@ int main(void)
     load_fpga(axFPGABitStream_length,(uint32_t *)axFPGABitStream);
     // Use 0x6141 as USB serial product ID (USB PID)
     HAL_usbserial_init2(false, false, 0x6141);        // Start USB serial not using interrupts
+#if SCHEME_CLK_72MHZ
+    /* The HAL asks for C21 = 48 MHz; from a 72 MHz oscillator the clock driver
+     * rounds the divider down to 1 and would give 72. Our gateware wants 36. */
+    S3x_Clk_Set_Rate(S3X_FB_21_CLK, USB_C21_RATE);
+#endif
     for (volatile int i = 0; i != 4000000; i++) ;   // Give it time to enumerate
     
     dbg_str("\n\n");

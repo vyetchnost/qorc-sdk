@@ -63,14 +63,25 @@ if [ "$STEP" = compile ] || [ "$STEP" = all ]; then
     SDCOPT=""
     if ql_symbiflow -h 2>&1 | grep -q -- '-s '; then SDCOPT="-s ../qomu.sdc"; fi
     echo "== compile: constraints via ${SDCOPT:-generated-file fallback}"
+    mkdir -p build
+    touch build/.compile_start
+    # fallback: seed the generated SDC file so the first pass already uses the
+    # current constraints (ql_symbiflow keeps an existing file)
+    [ -n "$SDCOPT" ] || cp ../qomu.sdc build/${TOP}_dummy.sdc
     ql_symbiflow -compile -d ql-eos-s3 -P "$PKG" -v $SRCS -t $TOP \
                  -p ../qomu.pcf $SDCOPT -dump header 2>&1 | tee "$HERE/build.log"
-    if [ -z "$SDCOPT" ]; then
+    if [ -z "$SDCOPT" ] && ! cmp -s ../qomu.sdc build/${TOP}_dummy.sdc; then
+        echo "== compile: constraints file was replaced; re-running pack/place/route"
         cp ../qomu.sdc build/${TOP}_dummy.sdc
         rm -f build/${TOP}.net build/${TOP}.place build/${TOP}.route build/${TOP}.fasm build/${TOP}.bit
         make -f Makefile.symbiflow build/${TOP}.bit 2>&1 | tee -a "$HERE/build.log"
         ( cd build && symbiflow_write_bitheader -b ${TOP}.bit ) 2>&1 | tee -a "$HERE/build.log"
         cp build/${TOP}_bit.h . 2>/dev/null || true
+    fi
+    # never let a failed compile hand an old bitstream to install
+    if [ ! build/${TOP}.bit -nt build/.compile_start ] || [ ! ${TOP}_bit.h -nt build/.compile_start ]; then
+        echo "== compile: FAILED, no new bitstream (see $HERE/build.log); not installing"
+        exit 1
     fi
     echo "== timing (route.log):"
     grep -A12 "Final intra-domain critical path delays" build/route.log 2>/dev/null | head -14 || true

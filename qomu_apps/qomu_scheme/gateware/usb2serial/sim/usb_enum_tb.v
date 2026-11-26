@@ -34,12 +34,28 @@ module top_tb;
 
     reg clk_48mhz = 0;
     reg clk_24 = 0;
-    reg clk_12mhz = 0;
+    reg clk12_48 = 0;
     reg reset = 1;
 
     always #10416 clk_48mhz = !clk_48mhz;          // 48 MHz
     always @(posedge clk_48mhz) clk_24 <= !clk_24;
-    always @(posedge clk_24) clk_12mhz <= !clk_12mhz; // 12 MHz, in phase
+    always @(posedge clk_24) clk12_48 <= !clk12_48;   // 12 MHz, in phase
+
+    // 72 MHz build (USB_CLK72 in AL4S3B_FPGA_Top.v): Sys_Clk1 = 72 / 2 =
+    // 36 MHz and Sys_Clk0 = 72 / 6 = 12 MHz, as C21 and C16 from a 72 MHz
+    // oscillator
+    reg clk_72mhz = 0;
+    reg clk_36mhz = 0;
+    reg [1:0] c72 = 0;
+    reg clk12_72 = 0;
+    always #6944 clk_72mhz = !clk_72mhz;
+    always @(posedge clk_72mhz) begin
+        clk_36mhz <= !clk_36mhz;
+        if (c72 == 2'd2) begin c72 <= 0; clk12_72 <= !clk12_72; end
+        else c72 <= c72 + 1'b1;
+    end
+
+    wire clk_12mhz = dut.USB_CLK_72 ? clk12_72 : clk12_48;
 
     initial begin
         #200000 reset = 0;
@@ -64,7 +80,7 @@ module top_tb;
     // The ASSP (qlal4s3b_cell_macro) model has no behaviour: drive its
     // clock / reset outputs as the chip would.
     initial begin
-        force dut.Sys_Clk1     = clk_48mhz;
+        force dut.Sys_Clk1     = dut.USB_CLK_72 ? clk_36mhz : clk_48mhz;
         force dut.Sys_Clk0     = clk_12mhz;
         force dut.Sys_Clk1_Rst = reset;
         force dut.Sys_Clk0_Rst = reset;
@@ -80,6 +96,7 @@ module top_tb;
 
 
     integer errors = 0;
+
 
     // ---- Wishbone master standing in for the M4 (registers at byte offsets) ----
     // Timing as on the chip: request at a falling edge, the slave registers ACK
@@ -637,6 +654,7 @@ module top_tb;
             $dumpvars(1, top_tb.dut.u_AL4S3B_FPGA_IP.u_usb2m4_serial.usb_fs_pe_inst.usb_fs_out_pe_inst);
             $dumpvars(1, top_tb.dut.u_AL4S3B_FPGA_IP.u_usb2m4_serial.usb_fs_pe_inst.usb_fs_in_pe_inst);
         end
+        $display("== clocking: %0s", dut.USB_CLK_72 ? "36 MHz Sys_Clk1 (72 / 2), receiver samples 3x" : "48 MHz Sys_Clk1, receiver samples 4x");
         #1000000;
         send_usb_port_reset();
         #1000000;

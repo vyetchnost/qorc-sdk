@@ -41,7 +41,7 @@ S3x_ClkD S3clk [] = {
         .cru_ctrl = CRU_CTRL(0x0, 0x1fe, 9, 0x4, 0x50, 0x7f, 0),
         .flags = HW_GATED,
         .def_max_rate = HSOSC_DEF_RATE,
-        .init_state = INIT_STATE(F_48MHZ, 0x5f, INIT_GATE_ON),
+        .init_state = INIT_STATE(HSOSC_DEF_RATE, 0x5f, INIT_GATE_ON),   /* C10: M4 */
     },
     [CLK_C02] = {
         .name = "C2",
@@ -110,9 +110,9 @@ S3x_ClkD S3clk [] = {
         .type = SRC_CLK,
         .sync_clk = SYNC_CLKD (0, 0, 0),
         .cru_ctrl = CRU_CTRL (0x34, 0x1fe, 9, 0x38, 0x70, 0x1, 8),
-        .def_max_rate = (F_48MHZ),
+        .def_max_rate = (USB_C21_RATE),        /* C21: USB receiver clock, 48 or 36 MHz */
         //.init_state = INIT_STATE(F_3MHZ, 1, INIT_GATE_OFF),
-        .init_state = INIT_STATE(F_48MHZ, 1, INIT_GATE_OFF),
+        .init_state = INIT_STATE(USB_C21_RATE, 1, INIT_GATE_OFF),
     },
     [CLK_C01] = {
         .name = "C1",
@@ -251,22 +251,22 @@ S3x_Policy_Node dfs_node[]  = {
 /* 0th Policy is only for lpm not for run mode */
     [0] = { // Sleep
         .clk_domain = {CLK_C01, CLK_C09, CLK_C10, CLK_C08X4},
-        .rate = {F_256KHZ, F_256KHZ, F_48MHZ, F_256KHZ},
+        .rate = {F_256KHZ, F_256KHZ, HSOSC_DEF_RATE, F_256KHZ},
         .step_width =  800,/* msec */
         .cpuload_downthreshold = 0,
         .cpuload_upthreshold = 98,
         .policySleep = 0xFF,                   // Sleep policy: this is the sleep state, do nothing
-        .minHSOSC = F_48MHZ,
+        .minHSOSC = HSOSC_DEF_RATE,
     },
 
     [1] = { // Minimum performance
         .clk_domain = {CLK_C01, CLK_C09, CLK_C10, CLK_C08X4},
-        .rate = {F_3MHZ, F_3MHZ, F_48MHZ, F_256KHZ},
+        .rate = {F_3MHZ, F_3MHZ, HSOSC_DEF_RATE, F_256KHZ},     /* C10 = M4 clock */
         .step_width = 100,/* msec */
         .cpuload_downthreshold = 0,             // Lowest active state, never go lower
         .cpuload_upthreshold = 110,
         .policySleep = 0,                       // When idle, go to deep sleep (node 0)
-        .minHSOSC = F_48MHZ,
+        .minHSOSC = HSOSC_DEF_RATE,
     },
 #if 1
     [2] = {

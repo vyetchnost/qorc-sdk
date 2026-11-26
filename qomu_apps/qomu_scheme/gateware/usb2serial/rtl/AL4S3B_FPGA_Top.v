@@ -161,15 +161,29 @@ assign usb_pu_cntrl_o = 1'b1;
 //          1. The clock is 48MHz. It is used as-is for the 48MHz USB clock.
 //          2. The clock is 72MHz. It is divided by 1.5 to generate the 48MHz USB clock.
 
-// qomu_scheme: the firmware always runs Sys_Clk1 at 48 MHz (clock_select = 0),
-// so the /1.5 divider and glitch-free clock switch are removed. The divider
-// contained a combinational loop that the open toolchain does not accept.
-      
+// qomu_scheme: the receiver clock is chosen when the gateware is built (the
+// clock_select register is ignored). QuickLogic's /1.5 divider used a
+// combinational loop the open toolchain rejects, and any /1.5 needs logic in a
+// clock path; instead the 72 MHz build samples at 3x from a 36 MHz clock that
+// the chip's clock generator makes exactly (C21 = 72 MHz / 2).
+//
+//   USB_CLK72 undefined: Sys_Clk1 (C21) = 48 MHz, receiver samples 4x per bit.
+//   USB_CLK72 defined:   Sys_Clk1 (C21) = 36 MHz, receiver samples 3x per bit
+//                        (usb_fs_rx.v); M4 at 72 MHz. The firmware must match
+//                        (SCHEME_CLK_72MHZ in s3x_pwrcfg.h).
+// The define must stay in this file, which is compiled first.
+`define USB_CLK72
 
 gclkbuff u_gclkbuff_reset0 ( .A(Sys_Clk0_Rst | WB_RST), .Z(WB_RST_FPGA) );
 gclkbuff u_gclkbuff_clock0 ( .A(Sys_Clk0), .Z(clk_12mhz) );
 gclkbuff u_gclkbuff_reset ( .A(Sys_Clk1_Rst), .Z(reset) );
 
+`ifdef USB_CLK72
+localparam USB_CLK_72 = 1;              // read by the testbench
+`else
+localparam USB_CLK_72 = 0;
+`endif
+// receiver sample clock (named clk_48mhz throughout the RTL; 36 MHz when USB_CLK72)
 gclkbuff u_gclkbuff_clk48 ( .A(Sys_Clk1), .Z(clk_48mhz) );
 
 assign WB_CLK = clk_12mhz;

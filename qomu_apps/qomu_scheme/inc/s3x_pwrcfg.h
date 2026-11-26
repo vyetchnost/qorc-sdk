@@ -27,7 +27,19 @@
 #define OSC_MINIMUM_FREQ                            (HSOSC_1MHZ)
 #define OSC_MAXIMMUM_FREQ                           (HSOSC_1MHZ * 80)
 
+/* qomu_scheme: 1 = oscillator and M4 (C10) at 72 MHz, C21 = 36 MHz for a
+ * gateware built with USB_CLK72 (its USB receiver samples 3x per bit).
+ * 0 = oscillator, M4 and C21 at 48 MHz, gateware built without USB_CLK72. */
+#ifndef SCHEME_CLK_72MHZ
+#define SCHEME_CLK_72MHZ 1
+#endif
+#if SCHEME_CLK_72MHZ
+#define HSOSC_DEF_RATE F_72MHZ
+#define USB_C21_RATE   (36 * F_1MHZ)
+#else
 #define HSOSC_DEF_RATE F_48MHZ
+#define USB_C21_RATE   F_48MHZ
+#endif
 #define HSOSC_QOS_VAL F_9MHZ
 
 #define FFE_MHZ (F_1MHZ * 80)
