@@ -82,10 +82,10 @@ parameter                FPGA_REV_NUM_ADR            =  10'h004;   // 0x04
 parameter                FPGA_SCRATCH_REG_ADR        =  10'h008;   // 0x08
 parameter                FPGA_CLKCTRL_REG_ADR        =  10'h00C;   // 0x0C
 parameter                FPGA_USBPID_REG_ADR         =  10'h010;   // 0x10
-parameter                FPGA_DBG0_REG_ADR           =  10'h014;   // 0x14 qomu_scheme: {pkt starts, line transitions}
+parameter                FPGA_DBG0_REG_ADR           =  10'h014;   // 0x14 qomu_scheme: {bad rx packets, data packets sent}
 parameter                FPGA_DBG2_REG_ADR           =  10'h01C;   // 0x1C qomu_scheme: {u2m pops, u2m pushes}
 parameter                FPGA_DBG3_REG_ADR           =  10'h020;   // 0x20 qomu_scheme: {m2u pushes, u2m pushes refused (full)}
-parameter                FPGA_DBG1_REG_ADR           =  10'h018;   // 0x18 qomu_scheme: {tx packets, valid rx packets}
+parameter                FPGA_DBG1_REG_ADR           =  10'h018;   // 0x18 qomu_scheme: {ACKs received, valid rx packets}
 
 // USB to M4, and M4 to USB registers
 parameter                FPGA_U2M_FIFO_FLAGS        =  10'h040;

@@ -424,7 +424,10 @@ static void usb_dbg_leds(unsigned tick)
 }
 #endif /* SCHEME_USB_DIAG */
 
-/* (usb-dbg) -> "lines starts valid tx" counter string, or #f with SpDE gateware */
+/* (usb-dbg) -> "datatx bad valid acks": data packets sent, packets received
+ * with a bad PID/CRC, valid packets received, ACKs received (16-bit, wrapping);
+ * #f with SpDE gateware. (Before 26 Nov: line transitions, packet starts,
+ * valid packets, tx packets, saturating; the LED ladder still reads them so.) */
 static scm_obj p_usb_dbg(scm_obj args)
 {
     uint32_t v[4];

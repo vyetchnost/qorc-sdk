@@ -783,7 +783,7 @@ module top_tb;
         if (ta_max > 1000000)
             $display("%d ERROR (turnaround): %0.1f bit times leaves too little margin to the host's timeout",
                      $time, ta_max / 83333.0);
-        $display("== debug counters: line transitions %0d, packet starts %0d, valid packets %0d, tx packets %0d",
+        $display("== debug counters: data packets sent %0d, bad packets received %0d, valid packets received %0d, ACKs received %0d",
                  dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[15:0],  dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[31:16],
                  dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[47:32], dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[63:48]);
         $display("== done at %0t", $time);

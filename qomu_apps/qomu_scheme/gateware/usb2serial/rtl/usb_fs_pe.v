@@ -102,21 +102,18 @@ module usb_fs_pe #(
   // sof interface
   assign sof_valid = rx_pkt_end && rx_pkt_valid && rx_pid == 4'b0101;
 
-  // line transitions: usb_fs_rx flips dbg_line_flip at 48 MHz; count its changes
-  // here (approximate: two transitions within one 12 MHz clock count once)
-  wire dbg_line_flip;
-  reg  [2:0]  dbg_flip_sync = 3'b0;
-  reg  [15:0] dbg_line_toggles = 16'h0;
-  reg  [15:0] dbg_starts = 16'h0, dbg_valid = 16'h0, dbg_tx = 16'h0;
+  // qomu_scheme debug counters (16 bit, wrapping), read as registers 0x14/0x18:
+  //   data packets sent (DATA0/1), packets received with a bad PID or CRC,
+  //   valid packets received, ACKs received from the host
+  wire dbg_line_flip;                   // from usb_fs_rx, unused here now
+  reg  [15:0] dbg_datatx = 16'h0, dbg_bad = 16'h0, dbg_valid = 16'h0, dbg_ack = 16'h0;
   always @(posedge clk) begin
-      dbg_flip_sync <= {dbg_flip_sync[1:0], dbg_line_flip};
-      if ((dbg_flip_sync[2] ^ dbg_flip_sync[1]) && dbg_line_toggles != 16'hFFFF)
-          dbg_line_toggles <= dbg_line_toggles + 1'b1;
-      if (rx_pkt_start && dbg_starts != 16'hFFFF) dbg_starts <= dbg_starts + 1'b1;
-      if (rx_pkt_end && rx_pkt_valid && dbg_valid != 16'hFFFF) dbg_valid <= dbg_valid + 1'b1;
-      if (tx_pkt_start && dbg_tx != 16'hFFFF) dbg_tx <= dbg_tx + 1'b1;
+      if (tx_pkt_start && tx_pid[1:0] == 2'b11)         dbg_datatx <= dbg_datatx + 1'b1;
+      if (rx_pkt_end && !rx_pkt_valid)                  dbg_bad    <= dbg_bad + 1'b1;
+      if (rx_pkt_end && rx_pkt_valid)                   dbg_valid  <= dbg_valid + 1'b1;
+      if (rx_pkt_end && rx_pkt_valid && rx_pid == 4'b0010) dbg_ack <= dbg_ack + 1'b1;
   end
-  assign dbg_counters = {dbg_tx, dbg_valid, dbg_starts, dbg_line_toggles};
+  assign dbg_counters = {dbg_ack, dbg_valid, dbg_bad, dbg_datatx};
   assign frame_index = rx_frame_num;
 
 
