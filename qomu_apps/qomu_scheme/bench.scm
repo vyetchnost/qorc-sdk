@@ -1,4 +1,3 @@
-
 (define (fib n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
 (let loop ((n 5))
   (if (= n 0)
