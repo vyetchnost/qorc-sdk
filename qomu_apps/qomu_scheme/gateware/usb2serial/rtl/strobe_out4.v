@@ -60,11 +60,12 @@ reg strobe_out_dup3;
 		sync <= { sync[DELAY-1:0], flag };
 
 	//assign strobe_out = sync[DELAY] ^ sync[DELAY-1];
+    // qomu_scheme: synchronised stages only (see strobe.v)
     always @(posedge clk_out) begin
-	    strobe_out <= sync[DELAY-1] ^ sync[DELAY-2];
-	    strobe_out_dup1 <= sync[DELAY-1] ^ sync[DELAY-2];
-	    strobe_out_dup2 <= sync[DELAY-1] ^ sync[DELAY-2];
-	    strobe_out_dup3 <= sync[DELAY-1] ^ sync[DELAY-2];
+	    strobe_out <= sync[DELAY] ^ sync[DELAY-1];
+	    strobe_out_dup1 <= sync[DELAY] ^ sync[DELAY-1];
+	    strobe_out_dup2 <= sync[DELAY] ^ sync[DELAY-1];
+	    strobe_out_dup3 <= sync[DELAY] ^ sync[DELAY-1];
 	end
 
     //synthesis attribute strobe_out preserve_signal true

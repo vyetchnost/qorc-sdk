@@ -51,8 +51,13 @@ reg strobe_out;
 		sync <= { sync[DELAY-1:0], flag };
 
 	//assign strobe_out = sync[DELAY] ^ sync[DELAY-1];
+	// qomu_scheme: use only synchronised stages. Upstream XORed sync[1] with
+	// sync[0], the first (possibly metastable) flop; when the flag changed
+	// in its setup window, the XOR and sync[1] could see different values and
+	// the event arrived twice or not at all (duplicated or lost bytes, lost
+	// packet ends). Costs one clk_out cycle of latency.
 	always @(posedge clk_out)
-	    strobe_out <= sync[DELAY-1] ^ sync[DELAY-2];
+	    strobe_out <= sync[DELAY] ^ sync[DELAY-1];
 
 	assign data_out = data;
 `else
