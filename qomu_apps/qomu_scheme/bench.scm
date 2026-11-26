@@ -1,4 +1,5 @@
 (define (fib n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
+(display 'cells-free=) (display (car (room))) (newline)
 (let loop ((n 5))
   (if (= n 0)
     'fib20timed
