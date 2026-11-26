@@ -172,7 +172,8 @@ assign usb_pu_cntrl_o = 1'b1;
 //                        (usb_fs_rx.v); M4 at 72 MHz. The firmware must match
 //                        (SCHEME_CLK_72MHZ in s3x_pwrcfg.h).
 // The define must stay in this file, which is compiled first.
-`define USB_CLK72
+// 26 Nov 2026: the 72 MHz build is parked (see README); 48 MHz is the default.
+//`define USB_CLK72
 
 gclkbuff u_gclkbuff_reset0 ( .A(Sys_Clk0_Rst | WB_RST), .Z(WB_RST_FPGA) );
 gclkbuff u_gclkbuff_clock0 ( .A(Sys_Clk0), .Z(clk_12mhz) );

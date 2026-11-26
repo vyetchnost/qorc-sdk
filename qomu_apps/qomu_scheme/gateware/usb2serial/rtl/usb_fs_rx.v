@@ -128,6 +128,9 @@ module usb_fs_rx (
   //wire line_state_valid = (bit_phase == 1);
   //assign bit_strobe = (bit_phase == 2);
   reg   line_state_valid;
+  // qomu_scheme: a private copy for the packet-boundary detector below, so
+  // its timing doesn't depend on line_state_valid's large fan-out
+  (* keep *) reg line_state_valid_h = 1'b0;
   //reg   line_state_valid_r;
   
 
@@ -153,6 +156,7 @@ module usb_fs_rx (
           line_state_valid <= 1;
       else
           line_state_valid <= 0;
+      line_state_valid_h <= (bit_phase == 0) && !ls_trans;
 
       if ((bit_phase == 1) && !ls_trans)
           bit_strobe <= 1;
@@ -171,6 +175,11 @@ module usb_fs_rx (
   reg [5:0] line_history = 0;
   reg       line_history_h25;
   reg       line_history_h0;
+  // qomu_scheme: history matches kept up to date with line_history, so each
+  // pattern check is one small compare (timing): hist_1001 == (line_history[3:0]
+  // == 4'b1001), hist_lo_00 == (line_history[1:0] == 2'b00)
+  reg       hist_1001;
+  reg       hist_lo_00;
   reg packet_valid = 0;
   reg next_packet_valid;
   wire packet_start = next_packet_valid && !packet_valid;
@@ -211,20 +220,21 @@ module usb_fs_rx (
       line_history <= 6'b101010;
       line_history_h25 <= 0;
       line_history_h0 <= 0;
+      hist_1001 <= 0;                   // line_history[3:0] = 4'b1010
+      hist_lo_00 <= 0;                  // line_history[1:0] = 2'b10
       packet_valid <= 0;
     end else begin
       // keep a history of the last two states on the line
-      if (line_state_valid) begin
+      if (line_state_valid_h) begin
         line_history[5:0] <= {line_history[3:0], line_state[1:0]};
         // added [RO 2020.05.07]: add pipelining
-        if ({line_history[3:0], line_state[1:0]} == 6'b100101)
-            line_history_h25 <= 1;
-        else
-            line_history_h25 <= 0;
-        if ({line_history[1:0], line_state[1:0]} == 4'b000)
-            line_history_h0 <= 1;
-        else
-            line_history_h0 <= 0;
+        // qomu_scheme: same as {line_history[3:0], line_state[1:0]} == 6'b100101
+        // and {line_history[1:0], line_state[1:0]} == 4'b0000, using the
+        // precomputed history matches
+        line_history_h25 <= hist_1001 && (line_state[1:0] == 2'b01);
+        line_history_h0  <= hist_lo_00 && (line_state[1:0] == 2'b00);
+        hist_1001  <= ({line_history[1:0], line_state[1:0]} == 4'b1001);
+        hist_lo_00 <= (line_state[1:0] == 2'b00);
       end
 
       packet_valid <= next_packet_valid;

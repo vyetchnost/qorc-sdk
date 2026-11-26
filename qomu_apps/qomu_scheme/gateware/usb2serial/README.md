@@ -40,11 +40,46 @@ Changes from the s3-gateware RTL (commit 2f8fed6):
   pauses and `usb_fs_out_pe` NAKs the next OUT until the M4 has read enough.
 - `usb_fs_rx.v`, `usb_fs_pe.v`, `AL4S3B_FPGA_IP.v`: debug counters; the line
   transitions flip a bit at 48 MHz that is counted in the 12 MHz domain.
+- `strobe.v`, `strobe_out4.v`: the clock-crossing strobe XORs two synchronised
+  flops. Upstream used the first (possibly metastable) stage, so an event
+  could arrive twice or not at all depending on clock phase and placement.
+- `usb_fs_tx.v`: `USB_TX_FAST_START` starts the sync pattern on the clock after
+  `pkt_start` instead of idling 7 bit times, and holds the line state at J
+  while the output is off (upstream relied on the idle time to reach J). The
+  reply turnaround drops from about 14.5 to about 8 bit times; the host gives up
+  after 16-18.
+- `usb_fs_pe.v`: debug counters (registers 0x14/0x18, 16 bit, wrapping): data
+  packets sent, packets received with a bad PID/CRC, valid packets received,
+  ACKs received.
 - `qomu.sdc`: 48 MHz / 12 MHz clock constraints for timing-driven place and route.
 - `qomu.pcf`: Qomu pins, from the schematic: D+ FBIO_31/E4, D- FBIO_28/F3,
   pull-up control FBIO_23/E2.
 
 Simulation (`build.sh sim`, `sim/usb_enum_tb.v`): enumeration, M4-to-USB and
-USB-to-M4 data, and flow control with 17 packets against a full FIFO.
+USB-to-M4 data, flow control with 17 packets against a full FIFO, and the
+reply turnaround (fails above 12 bit times).
+
+## 72 MHz (parked, 26 Nov 2026)
+
+Goal: M4 at 72 MHz (about 1.5x faster Scheme). All clocks divide from one
+oscillator, so 72 MHz leaves no integer divider for a 48 MHz USB clock.
+
+- QuickLogic divided 72 MHz by 1.5 in the fabric with a combinational loop,
+  which the open toolchain rejects. A glitch-free XOR divider needs a
+  falling-edge flop; Yosys builds that with a logic-cell inverter in the clock
+  path (not the cell's QCKS polarity bit), so every second 48 MHz edge would
+  arrive several ns late and the receiver's short periods would fail.
+- Instead, `USB_CLK72` runs the receiver from C21 = 72 / 2 = 36 MHz with 3
+  samples per bit (`usb_fs_rx.v`); firmware `SCHEME_CPU_MHZ 72` in
+  `inc/s3x_pwrcfg.h` sets the oscillator, C10 and the power policies, and
+  `main.c` sets C21 after the HAL (whose 48 MHz request rounds to 72).
+- Results: simulation passes, timing has 6 ns of margin, the CPU measured
+  72.15 MHz, and the board enumerated. Under traffic, output went missing;
+  with the CPU at 36 MHz (same USB clocks) it still did, so the cause is in
+  the 3x gateware path. That led to the strobe and turnaround fixes above,
+  which are kept for 48 MHz. With them, a 72 MHz build stopped starting at all
+  (no firmware LED), even with a bitstream that had booted earlier: start-up
+  at 72 MHz looks marginal. Next step when resumed: flash one 72 MHz build and
+  power-cycle it several times to see whether starts are intermittent.
 
 Build: see the header of `build.sh` (runs in the `symbiflow-qomu` container built from `../docker/Dockerfile`).

@@ -78,9 +78,19 @@ if [ "$STEP" = compile ] || [ "$STEP" = all ]; then
         ( cd build && symbiflow_write_bitheader -b ${TOP}.bit ) 2>&1 | tee -a "$HERE/build.log"
         cp build/${TOP}_bit.h . 2>/dev/null || true
     fi
-    # never let a failed compile hand an old bitstream to install
-    if [ ! build/${TOP}.bit -nt build/.compile_start ] || [ ! ${TOP}_bit.h -nt build/.compile_start ]; then
-        echo "== compile: FAILED, no new bitstream (see $HERE/build.log); not installing"
+    # never let a failed compile hand an old bitstream to install: the
+    # bitstream must exist and be newer than every input (an up-to-date build
+    # that make skipped is fine), and the header must not be older than it
+    FRESH=1
+    [ -f build/${TOP}.bit ] && [ -f ${TOP}_bit.h ] || FRESH=0
+    if [ $FRESH = 1 ]; then
+        for f in $SRCS ../qomu.pcf ../qomu.sdc; do
+            [ "$f" -nt build/${TOP}.bit ] && { echo "== compile: $f is newer than the bitstream"; FRESH=0; }
+        done
+        [ ${TOP}_bit.h -ot build/${TOP}.bit ] && FRESH=0
+    fi
+    if [ $FRESH = 0 ]; then
+        echo "== compile: FAILED, no up-to-date bitstream (see $HERE/build.log); not installing"
         exit 1
     fi
     echo "== timing (route.log):"

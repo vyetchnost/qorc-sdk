@@ -34,7 +34,7 @@
  *       clocks, for telling CPU-speed effects from receiver effects.
  * C16 (12 MHz, USB protocol / Wishbone) divides evenly from all three. */
 #ifndef SCHEME_CPU_MHZ
-#define SCHEME_CPU_MHZ 72
+#define SCHEME_CPU_MHZ 48     /* 72 is parked: see gateware/usb2serial/README.md */
 #endif
 #if SCHEME_CPU_MHZ == 72
 #define HSOSC_DEF_RATE F_72MHZ

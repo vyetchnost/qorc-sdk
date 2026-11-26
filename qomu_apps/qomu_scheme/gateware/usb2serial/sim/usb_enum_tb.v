@@ -670,7 +670,9 @@ module top_tb;
             $dumpvars(1, top_tb.dut.u_AL4S3B_FPGA_IP.u_usb2m4_serial.usb_fs_pe_inst.usb_fs_in_pe_inst);
             $dumpvars(1, top_tb.dut.u_AL4S3B_FPGA_IP.u_usb2m4_serial.usb_fs_pe_inst.usb_fs_tx_inst);
         end
-        $display("== clocking: %0s", dut.USB_CLK_72 ? "36 MHz Sys_Clk1 (72 / 2), receiver samples 3x" : "48 MHz Sys_Clk1, receiver samples 4x");
+        // (not ?: - Verilog pads the shorter string with NULs, which %s hides)
+        if (dut.USB_CLK_72) $display("== clocking: 36 MHz Sys_Clk1 (72 / 2), receiver samples 3x");
+        else                $display("== clocking: 48 MHz Sys_Clk1, receiver samples 4x");
         #1000000;
         send_usb_port_reset();
         #1000000;
