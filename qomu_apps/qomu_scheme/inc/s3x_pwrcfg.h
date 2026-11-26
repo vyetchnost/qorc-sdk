@@ -27,18 +27,26 @@
 #define OSC_MINIMUM_FREQ                            (HSOSC_1MHZ)
 #define OSC_MAXIMMUM_FREQ                           (HSOSC_1MHZ * 80)
 
-/* qomu_scheme: 1 = oscillator and M4 (C10) at 72 MHz, C21 = 36 MHz for a
- * gateware built with USB_CLK72 (its USB receiver samples 3x per bit).
- * 0 = oscillator, M4 and C21 at 48 MHz, gateware built without USB_CLK72. */
-#ifndef SCHEME_CLK_72MHZ
-#define SCHEME_CLK_72MHZ 1
+/* qomu_scheme: oscillator and M4 (C10) clock in MHz.
+ *   48: C21 = 48 MHz, for a gateware built without USB_CLK72 (receiver 4x).
+ *   72: C21 = 72 / 2 = 36 MHz, gateware built with USB_CLK72 (receiver 3x).
+ *   36: C21 = 36 MHz, same gateware as 72; a slower CPU with identical USB
+ *       clocks, for telling CPU-speed effects from receiver effects.
+ * C16 (12 MHz, USB protocol / Wishbone) divides evenly from all three. */
+#ifndef SCHEME_CPU_MHZ
+#define SCHEME_CPU_MHZ 36
 #endif
-#if SCHEME_CLK_72MHZ
+#if SCHEME_CPU_MHZ == 72
 #define HSOSC_DEF_RATE F_72MHZ
 #define USB_C21_RATE   (36 * F_1MHZ)
-#else
+#elif SCHEME_CPU_MHZ == 36
+#define HSOSC_DEF_RATE (36 * F_1MHZ)
+#define USB_C21_RATE   (36 * F_1MHZ)
+#elif SCHEME_CPU_MHZ == 48
 #define HSOSC_DEF_RATE F_48MHZ
 #define USB_C21_RATE   F_48MHZ
+#else
+#error "SCHEME_CPU_MHZ must be 48, 72 or 36"
 #endif
 #define HSOSC_QOS_VAL F_9MHZ
 
