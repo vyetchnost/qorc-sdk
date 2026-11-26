@@ -97,6 +97,16 @@ module top_tb;
 
     integer errors = 0;
 
+    // Reply turnaround: from the end of the host's EOP (SE0 -> J) to the
+    // device driving the bus. The host gives up after 16-18 bit times.
+    time host_eop_t = 0;
+    time ta_max = 0;
+    always @(posedge usb_tx_en) begin
+        if (host_eop_t != 0 && $time - host_eop_t < 2000000 && $time - host_eop_t > ta_max)
+            ta_max = $time - host_eop_t;
+        host_eop_t = 0;
+    end
+
 
     // ---- Wishbone master standing in for the M4 (registers at byte offsets) ----
     // Timing as on the chip: request at a falling edge, the slave registers ACK
@@ -258,8 +268,12 @@ module top_tb;
       // eop
       send_usb_se0();
       send_usb_se0();
+      host_eop_t = $time;               // SE0 -> J: the reply turnaround starts here
       send_usb_j();
-      wait_usb_interpacket_delay();
+      // 2 bit times idle (the spec minimum) before the caller listens for a
+      // reply, so a fast device reply isn't missed
+      #83328;
+      #83328;
     end
     endtask
 
@@ -632,6 +646,7 @@ module top_tb;
     begin
       send_usb_ctrl_xfer(old_addr, {8'h00, 8'h00, 8'h00, 8'h00, 8'h00, new_addr, 8'h05, 8'h00});
       //`assert("new device address", dut.dev_addr, 7'h1e)
+      wait_usb_interpacket_delay();     // the device applies the address once it has seen the ACK
       `assert("new device address", dut.u_AL4S3B_FPGA_IP.u_usb2m4_serial.ctrl_ep_inst.dev_addr, 7'h1e)
     end
     endtask
@@ -653,6 +668,7 @@ module top_tb;
             $dumpvars(1, top_tb.dut.u_AL4S3B_FPGA_IP.u_usb2m4_serial.usb_fs_pe_inst.usb_fs_rx_inst);
             $dumpvars(1, top_tb.dut.u_AL4S3B_FPGA_IP.u_usb2m4_serial.usb_fs_pe_inst.usb_fs_out_pe_inst);
             $dumpvars(1, top_tb.dut.u_AL4S3B_FPGA_IP.u_usb2m4_serial.usb_fs_pe_inst.usb_fs_in_pe_inst);
+            $dumpvars(1, top_tb.dut.u_AL4S3B_FPGA_IP.u_usb2m4_serial.usb_fs_pe_inst.usb_fs_tx_inst);
         end
         $display("== clocking: %0s", dut.USB_CLK_72 ? "36 MHz Sys_Clk1 (72 / 2), receiver samples 3x" : "48 MHz Sys_Clk1, receiver samples 4x");
         #1000000;
@@ -762,6 +778,11 @@ module top_tb;
         else     $display("   ok: retried packet delivered");
         wb_expect(17'h040, 32'h0, "u2m flags empty at end");
 
+        $display("== reply turnaround: max %0d ns = %0.1f bit times (host timeout 16-18)",
+                 ta_max / 1000, ta_max / 83333.0);
+        if (ta_max > 1000000)
+            $display("%d ERROR (turnaround): %0.1f bit times leaves too little margin to the host's timeout",
+                     $time, ta_max / 83333.0);
         $display("== debug counters: line transitions %0d, packet starts %0d, valid packets %0d, tx packets %0d",
                  dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[15:0],  dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[31:16],
                  dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[47:32], dut.u_AL4S3B_FPGA_IP.usb_dbg_counters[63:48]);

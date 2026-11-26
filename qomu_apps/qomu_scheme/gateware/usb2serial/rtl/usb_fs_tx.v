@@ -1,4 +1,8 @@
 `define USB_TX_12MHZ
+// qomu_scheme: start the sync pattern on the clock after pkt_start instead of
+// waiting 7 bit times for a byte boundary. The reply turnaround (host EOP to
+// our sync) otherwise comes close to the host's 16-18 bit-time timeout.
+`define USB_TX_FAST_START
 module usb_fs_tx (
   // A 48MHz clock is required to receive USB data at 12MHz
   // it's simpler to juse use 48MHz everywhere
@@ -244,7 +248,11 @@ module usb_fs_tx (
 
     //if (pkt_start_48) begin
     if (pkt_start_48_dup1) begin
+`ifdef USB_TX_FAST_START
+      bit_count <= 0;                   // byte_strobe on the next clock: SYNC loads
+`else
       bit_count <= 1;
+`endif
       bit_history_q <= 0;
 
     end else if (bit_strobe) begin
@@ -319,6 +327,15 @@ module usb_fs_tx (
     end else if (bit_strobe) begin
       oe <= serial_tx_oe;
 
+`ifdef USB_TX_FAST_START
+      // qomu_scheme: while the output is off, hold the line state at J, so the
+      // first sync bit always toggles from J (upstream let NRZI run on idle
+      // data and relied on the 7-bit wait leaving it at J).
+      if (!serial_tx_oe) begin
+        dp <= 1;
+        dn <= 0;
+      end else
+`endif
       if (serial_tx_se0) begin
         dp <= dp_eop[0];
         dn <= 0;
