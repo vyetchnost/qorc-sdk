@@ -694,6 +694,7 @@ python3 tools/paste_test.py tests.scm</code></pre>
     <li>Save and load Scheme source in the spare SPI flash, so programs survive a power cycle.</li>
     <li>Primitives for registers in your own FPGA logic, now that the gateware builds from source.</li>
     <li>More interpreter speed: profile real programs; cache global lookups; fewer cells for <code>let</code> and closures.</li>
+    <li>Request our own USB product ID. QuickLogic's <code>1d50:6140</code>/<code>6141</code> were never registered for it: Openmoko's registry assigns them to Osmocom's osmo-ASF4-DFU bootloader and sysmoOCTSIM reader (TinyFPGA, whose USB core ours descends from, has <code>6130</code>). Open projects qualify; you apply with a pull request to <code>openmoko/openmoko-usb-oui</code>, then change <code>usbpid</code> in <code>main.c</code>.</li>
     <li>Watch the <code>rom</code> budget: 17 KB left. If it runs short, move the <code>rom</code>/<code>ram</code> boundary again or limit <code>-O2</code> to the hot functions.</li>
   </ol>
 </section>

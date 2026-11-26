@@ -5,10 +5,14 @@ Bypasses screen/terminal/ssh so host-side buffering can be ruled in or out.
 Wakes the REPL, reads (fifo-stats) before and after, sends the file with
 LF -> CR in chunks of --chunk bytes, and captures all output to a log.
 
-Run on the Pi with screen closed:
-    python3 tools/paste_test.py tests.scm --chunk 1024
+Prints Error and tests: lines, and any line of the form name=value, so a
+benchmark can report its numbers that way, e.g. bench.scm's fib20time=905.
+
+Run on the Pi with the terminal program closed:
+    python3 tools/paste_test.py tests.scm
+    python3 tools/paste_test.py bench.scm --idle 3
 """
-import argparse, os, select, sys, termios, threading, time, tty
+import argparse, os, re, select, sys, termios, threading, time, tty
 
 ap = argparse.ArgumentParser()
 ap.add_argument("file")
@@ -78,5 +82,5 @@ if len(stats) >= 2:
           + (f"  irqs {d[5]}" if len(d) > 5 else "")
           + f"   (expected push {len(data) + 13})")
 for l in text.replace("\r", "").split("\n"):
-    if l.startswith("Error") or l.startswith("tests:"):
+    if l.startswith("Error") or l.startswith("tests:") or re.match(r"[A-Za-z][\w-]*=\S", l):
         print("  " + l)
