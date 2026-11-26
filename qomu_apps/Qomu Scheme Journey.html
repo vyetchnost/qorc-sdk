@@ -122,9 +122,9 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
 <div class="wrap">
 
 <header>
-  <div class="eyebrow">qorc-sdk · Qomu · EOS S3 · 22–24 Nov 2026</div>
+  <div class="eyebrow">qorc-sdk · Qomu · EOS S3 · 22–26 Nov 2026</div>
   <h1>Qomu Scheme: from question to REPL</h1>
-  <p class="lede">How a Scheme interpreter went from "do you think we can?" to a working prompt on the Qomu's USB-serial console in one morning: what we built, how it fits into the SDK, and every bug we hit on the way to the first <code>&gt;</code>. <a href="#part-two">Part two</a> follows a paste problem down into the eFPGA: the USB core rebuilt from source with the open toolchain, three gateware bugs, RX flow control, and measurements that traced the last two missing bytes to <code>screen</code>. <a href="#part-three">Part three</a> makes the interpreter 3.3× faster and tidies up the gateware until every path meets timing.</p>
+  <p class="lede">How a Scheme interpreter went from "do you think we can?" to a working prompt on the Qomu's USB-serial console in one morning: what we built, how it fits into the SDK, and every bug we hit on the way to the first <code>&gt;</code>. <a href="#part-two">Part two</a> follows a paste problem down into the eFPGA: the USB core rebuilt from source with the open toolchain, three gateware bugs, RX flow control, and measurements that traced the last two missing bytes to <code>screen</code>. <a href="#part-three">Part three</a> makes the interpreter 3.3× faster and tidies up the gateware until every path meets timing. <a href="#part-four">Part four</a> tries 72 MHz, parks it, and keeps three gateware fixes it uncovered: the suite now runs over USB in 32.8 s instead of 52.9.</p>
   <div class="facts">
     <div class="fact"><b>Written from scratch</b><span>A ~2,400-line portable C99 interpreter. TinyScheme wasn't reachable from the sandbox, so we wrote our own.</span></div>
     <div class="fact"><b>Built on helloworld</b><span>Same USB-serial gateware and FreeRTOS startup. The CLI task is replaced by a Scheme task.</span></div>
@@ -623,6 +623,108 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
   <p class="cap">Between builds, <code>(fib 20)</code> moved between 905 and 953 ms with no interpreter change: code alignment shifts when the image layout does. On this chip, a few percent between builds means little; compare within one build.</p>
 </section>
 
+
+<!-- ================= PART FOUR ================= -->
+<section id="part-four">
+  <div class="head">
+    <div class="eyebrow">Part four · Thursday</div>
+    <h2>The 72 MHz side quest</h2>
+  </div>
+  <div class="prose">
+    <p>A 72 MHz M4 would make everything about 1.5× faster, and QuickLogic's QuickFeather AI apps prove the chip can run that way. The catch is that every clock divides from one oscillator: from 72 MHz there's no integer divider for the USB core's 48 MHz. The 72 MHz build never became reliable, so it's parked. Chasing it, though, uncovered three real bugs in the 48 MHz gateware, and fixing those made USB markedly faster.</p>
+  </div>
+  <ul class="stack">
+    <li><div class="dot host"></div><div class="what"><b>Where <code>1d50:6141</code> comes from</b><span>Openmoko gives product IDs under its vendor ID to open projects. In its registry, 6140 and 6141 belong to Osmocom devices; TinyFPGA, whose USB core ours descends from, has 6130. QuickLogic seems to have taken the next numbers without registering them.</span></div><div class="when">04:48</div></li>
+    <li><div class="dot"></div><div class="what"><b>A benchmark to keep</b><span><code>bench.scm</code> times <code>(fib 20)</code> five times and reports free cells; <code>paste_test.py</code> now prints any <code>name=value</code> line. A fuller heap costs about 5%: 917 ms fresh, 967 after the test suite.</span></div><div class="when">04:58</div></li>
+    <li><div class="dot bug"></div><div class="what"><b>A ÷1.5 clock in the fabric: abandoned before flashing</b><span>A glitch-free XOR divider needs a falling-edge flip-flop. Yosys builds one with a logic-cell inverter in the clock path, so every second 48 MHz edge would arrive several ns late.</span></div><div class="when">05:29</div></li>
+    <li><div class="dot"></div><div class="what"><b>Instead: a 3× receiver at 36 MHz</b><span>C21 = 72 ÷ 2 comes straight from the clock generator, and the receiver samples each bit 3 times instead of 4. The board ran at 72.15 MHz, but output went missing under traffic.</span></div><div class="when">05:51</div></li>
+    <li><div class="dot win"></div><div class="what"><b>Reply turnaround: 14.5 → 8 bit times</b><span>The testbench now measures it; the host gives up after 16–18. The transmitter idled 7 bit times before every reply and now starts at once.</span></div><div class="when">06:20</div></li>
+    <li><div class="dot"></div><div class="what"><b>CPU at 36 MHz, same USB clocks: still broken</b><span>One firmware constant cleared the CPU and put the fault in the gateware.</span></div><div class="when">06:33</div></li>
+    <li><div class="dot win"></div><div class="what"><b>An upstream synchronizer bug</b><span>Receiver events crossing into the 12 MHz domain could arrive twice or not at all, depending on clock phase and placement.</span></div><div class="when">06:50</div></li>
+    <li><div class="dot bug"></div><div class="what"><b>72 MHz parked</b><span>The next 72 MHz builds didn't start at all, even with a bitstream that had booted earlier. Start-up at 72 MHz looks marginal; the board was fine with the saved binary.</span></div><div class="when">07:14</div></li>
+    <li><div class="dot win"></div><div class="what"><b>The fixes, banked at 48 MHz: <code>qomu_scheme_v0.2</code></b><span>Three power-ups, 137 of 137 each time, every byte accounted for, and 32.8 s for the suite instead of 52.9.</span></div><div class="when">08:31</div></li>
+  </ul>
+</section>
+
+<section>
+  <div class="head">
+    <div class="eyebrow">Part four</div>
+    <h2>What broke, part four</h2>
+  </div>
+  <div class="gotchas">
+    <div class="gotcha">
+      <h3>The power policy resets the CPU clock <span class="chip host">firmware</span></h3>
+      <div class="body">
+        <p>Raising C10's start value isn't enough: at boot the app applies power policy 1, whose table sets C10 to 48 MHz. With a 72 MHz oscillator that would have given 36.</p>
+        <p class="fix"><b>Fix:</b> the policy entries follow <code>SCHEME_CPU_MHZ</code> too.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>Clock requests round the wrong way <span class="chip host">firmware</span></h3>
+      <div class="body">
+        <p>The clock driver computes its divider as <code>source / rate</code>, rounding down. The HAL's request for 48 MHz from a 72 MHz source gives divider 1: 72 MHz, silently.</p>
+        <p class="fix"><b>Fix:</b> <code>main.c</code> sets C21 explicitly after the HAL's init.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>A falling-edge flip-flop costs a logic cell <span class="chip fpga">toolchain</span></h3>
+      <div class="body">
+        <p>The fabric's logic cell has a clock-polarity bit, but the toolchain's mapping doesn't use it; it inverts the clock through a separate cell. VPR treats the generated clock as ideal, so its timing report can't show the resulting skew.</p>
+        <p class="fix"><b>Lesson:</b> read the netlist (<code>build/*.eblif</code>), not just the timing summary. VPR names clocks after the net driving their clock buffer, which <code>pack.log</code> lists.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>The transmitter started from the wrong line state <span class="chip fpga">upstream</span></h3>
+      <div class="body">
+        <p>Upstream let the NRZI encoder run on idle data and relied on the 7-bit wait to leave the line state at J. Starting sooner sent an inverted sync pattern, and the waveform showed it at once.</p>
+        <p class="fix"><b>Fix:</b> hold J while the output is off.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>A synchronizer that read its metastable stage <span class="chip bug">upstream</span></h3>
+      <div class="body">
+        <p><code>strobe.v</code> XORed the first and second synchronizer flip-flops; the commented-out original used the second and third. When the flag changed in the first flop's setup window, an event arrived twice (a duplicated byte) or not at all (a lost byte or packet end). Whether that happens depends on the phase between two clocks from the same oscillator and on routing, so it changed from build to build.</p>
+        <p class="fix"><b>Fix:</b> synchronized stages only, at a cost of one 12 MHz clock.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>Placement moved a receiver path over the limit <span class="chip fpga">gateware</span></h3>
+      <div class="body">
+        <p>Back at 48 MHz, a slightly changed netlist routed the packet-boundary detector to 22.6 ns against 20.8: 9.8 ns of routing from a high-fan-out register, then three logic levels.</p>
+        <p class="fix"><b>Fix:</b> a private copy of that register and precomputed history matches; 20.5 ns.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>A failed compile installed the old bitstream <span class="chip host">build script</span></h3>
+      <div class="body">
+        <p><code>build.sh</code> ran <code>install</code> after a failed compile, from the previous header. The first fix then rejected an up-to-date build that make had rightly skipped.</p>
+        <p class="fix"><b>Fix:</b> install only if the bitstream is newer than every source and constraint file.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="head">
+    <div class="eyebrow">On the board</div>
+    <h2>Measurements, part four</h2>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Check</th><th>Result</th><th>Reading</th></tr></thead>
+      <tbody>
+        <tr><td>CPU clock, <code>(bench-fpga-read)</code></td><td class="num">72.15 / 36.14 / 48.15 MHz</td><td>For <code>SCHEME_CPU_MHZ</code> 72, 36 and 48.</td></tr>
+        <tr><td>FPGA register read</td><td class="num">1.55 / 2.32 / 2.33 µs</td><td>112, 84 and 112 CPU cycles: the bus to the fabric speeds up at 72 MHz.</td></tr>
+        <tr><td>Reply turnaround (simulation)</td><td class="num">14.5 → 8.0 bit times</td><td>Host timeout 16–18; real hardware adds cable and host delays.</td></tr>
+        <tr><td>Full suite via <code>paste_test.py</code></td><td class="num">52.9 → 32.8 s</td><td>Same interpreter and CPU speed; the difference is USB overhead.</td></tr>
+        <tr><td><code>(usb-dbg)</code> during output</td><td class="num">0 bad, ACKs = data</td><td>Every data packet acknowledged, no damaged packets received.</td></tr>
+        <tr><td>48 MHz critical path</td><td class="num">20.51 ns</td><td>Against 20.83 ns; 0.32 ns margin.</td></tr>
+        <tr><td><code>bench.scm</code></td><td class="num">917 / 967 ms</td><td>Fresh boot versus after <code>tests.scm</code>; see <code>cells-free=</code>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
 <!-- Files -->
 <section>
   <div class="head">
@@ -647,7 +749,8 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td><code>gateware/usb2serial/qomu.pcf</code>, <code>qomu.sdc</code></td><td><span class="chip ok">new</span></td><td>USB pins and the two clocks</td></tr>
         <tr><td><code>gateware/usb2serial/build.sh</code>, <code>iomux2c.py</code></td><td><span class="chip ok">new</span></td><td>Check, compile, install and simulate; pad script to C</td></tr>
         <tr><td><code>gateware/usb2serial/sim/</code></td><td><span class="chip ok">new</span></td><td>Testbench: enumeration, data both ways, flow control</td></tr>
-        <tr><td><code>tools/paste_test.py</code></td><td><span class="chip ok">new</span></td><td>Sends a file straight to the port and reports byte counts</td></tr>
+        <tr><td><code>tools/paste_test.py</code></td><td><span class="chip ok">new</span></td><td>Sends a file straight to the port and reports byte counts, errors and <code>name=value</code> lines</td></tr>
+        <tr><td><code>bench.scm</code></td><td><span class="chip ok">new</span></td><td>Times <code>(fib 20)</code> five times and reports free cells</td></tr>
         <tr><td><code>GCC_Project/qomu.ld</code></td><td><span class="chip host">changed</span></td><td><code>rom</code> 188 KB, <code>ram</code> from <code>0x2002F000</code></td></tr>
         <tr><td><code>GCC_Project/config.mk</code></td><td><span class="chip host">changed</span></td><td>Make 4.4 fix</td></tr>
       </tbody>
@@ -690,7 +793,8 @@ python3 tools/paste_test.py tests.scm</code></pre>
     <h2>Next steps</h2>
   </div>
   <ol class="todo">
-    <li><b>72 MHz side quest:</b> restore the fabric's ÷1.5 divider and clock switch in the gateware, so C21 can run at 72 MHz while the USB core still sees 48. Then raise the oscillator and C10 to 72 MHz and pass <code>fUse72MHz</code>. About 1.5× on everything.</li>
+    <li><b>72 MHz, parked:</b> the 3× receiver build (<code>USB_CLK72</code>, <code>SCHEME_CPU_MHZ 72</code>) is in the tree. Next: flash one build and power-cycle it several times to see whether start-up fails intermittently. Notes in <code>gateware/usb2serial/README.md</code>.</li>
+    <li>More timing margin at 48 MHz: the line-state logic (<code>ls_trans</code>) could get the same restructuring as the boundary detector.</li>
     <li>Save and load Scheme source in the spare SPI flash, so programs survive a power cycle.</li>
     <li>Primitives for registers in your own FPGA logic, now that the gateware builds from source.</li>
     <li>More interpreter speed: profile real programs; cache global lookups; fewer cells for <code>let</code> and closures.</li>
@@ -699,7 +803,7 @@ python3 tools/paste_test.py tests.scm</code></pre>
   </ol>
 </section>
 
-<footer>Written by Claude with Andrey Vyetchnost, 22–24 November 2026. A companion to <em>Qomu App Anatomy</em>.</footer>
+<footer>Written by Claude with Andrey Vyetchnost, 22–26 November 2026. A companion to <em>Qomu App Anatomy</em>.</footer>
 </div>
 </body>
 </html>
