@@ -16,6 +16,8 @@
 #include "eoss3_hal_gpio.h"
 #include "eoss3_hal_fpga_usbserial.h"
 #include "scheme.h"
+#include "scheme_fs.h"
+#include "spi_flash.h"
 
 #ifndef SCHEME_HEAP_BYTES
 #define SCHEME_HEAP_BYTES   (48 * 1024)     /* cell heap: 12 bytes per cell     */
@@ -150,6 +152,61 @@ static int q_brk(void)
     rx_break = 0;
     return 1;
 }
+
+/* ---------------------------------------------------------------- flash storage port */
+
+/* Second guard (scheme_fs.c checks first): nothing below 1 MB, where the
+ * bootloader, its metadata, the gateware and this app live. */
+#define QFS_LO  0x100000u
+#define QFS_HI  0x200000u
+static int qfs_ok(uint32_t a, uint32_t n) { return a >= QFS_LO && n <= QFS_HI - a; }
+
+static int qfs_init(void)
+{
+    uint8_t id;
+    spiFlashHandle.Init.ucFreq        = SPI_BAUDRATE_5MHZ;  /* what the bootloader uses */
+    spiFlashHandle.Init.ucSPIInf      = SPI_4_WIRE_MODE;
+    spiFlashHandle.Init.ucSSn         = SPI_SLAVE_1_SELECT;
+    spiFlashHandle.Init.ulCLKPhase    = SPI_PHASE_1EDGE;
+    spiFlashHandle.Init.ulCLKPolarity = SPI_POLARITY_LOW;
+    spiFlashHandle.Init.ulDataSize    = SPI_DATASIZE_8BIT;
+    spiFlashHandle.Init.ulFirstBit    = SPI_FIRSTBIT_MSB;
+    spiFlashHandle.ucSPIx             = SPI1_MASTER_SEL;
+    if (HAL_SPI_Init(&spiFlashHandle) != HAL_OK) return -1;
+    id = read_flash_id();                   /* also sets 256-byte pages */
+    return (id == 0 || id == 0xff) ? -1 : 0;
+}
+
+static int qfs_read(uint32_t a, void *buf, uint32_t n)
+{
+    if (!qfs_ok(a, n)) return -1;
+    return spiflash_read_fast(a, n, buf, NULL) == FlashOperationSuccess ? 0 : -1;
+}
+
+static int qfs_program(uint32_t a, const void *buf)
+{
+    /* one whole, aligned page per call: the driver's multi-chunk path
+     * advances its buffer pointer twice per chunk */
+    if (!qfs_ok(a, 256) || (a & 255)) return -1;
+    return spiflash_write(a, 256, (void *)buf, NULL) == FlashOperationSuccess ? 0 : -1;
+}
+
+static int qfs_erase(uint32_t a)
+{
+    /* one 4 KB sector per call: never lets the driver pick a 32/64 KB block */
+    if (!qfs_ok(a, 4096) || (a & 4095)) return -1;
+    return spiflash_erase(a, 4096) == FlashOperationSuccess ? 0 : -1;
+}
+
+static int q_getc(void);
+static int q_peek(void)
+{
+    return rx_head != rx_tail ? rx_ring[rx_tail] : -1;
+}
+
+static const fs_port qfs_port = {
+    qfs_init, qfs_read, qfs_program, qfs_erase, q_getc, q_peek
+};
 
 /* ---------------------------------------------------------------- primitives */
 
@@ -503,6 +560,7 @@ static const char board_prelude[] =
 "  (display \"Qomu extras: (peek a) (poke a v) (peek8 a) (poke8 a v) (sleep ms) (ms)\\n\")\n"
 "  (display \"  (led 'red|'green|'blue on?) (blink 'blue 5 200) (gpio-write n v) (gpio-read n)\\n\")\n"
 "  (display \"  (hex n) (room) (gc) (heap-free) (stack-free) (rx-dropped)\\n\")\n"
+"  (display \"Files: (files) (load 'f) (cat 'f) (write-file 'f) (save 'f str) (delete-file 'f)\\n\")\n"
 "  (display \"Ctrl-C interrupts a running program; up-arrow recalls the last line.\\n\"))\n";
 
 /* ---------------------------------------------------------------- task */
@@ -565,7 +623,12 @@ static void scheme_task(void *arg)
 #if INCLUDE_uxTaskGetStackHighWaterMark
     scm_defprim("stack-free", p_stack_free, 0, 0);
 #endif
+    scheme_fs_init(&qfs_port);
     scm_eval_cstr(board_prelude);
+
+    /* Run the "boot" file before waiting for a terminal, so it works on a
+     * USB charger too. Ctrl-C (or any error) ends it and the REPL starts. */
+    scheme_fs_autorun();
 
     /* Green while waiting: the banner prints once someone is typing, i.e. a
      * terminal is open. All LEDs go off when the REPL starts. */

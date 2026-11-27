@@ -37,6 +37,8 @@ void    scm_define(const char *name, scm_obj value);
 /* running code */
 void    scm_repl(void);                      /* returns on EOF (never on tty)   */
 int     scm_eval_cstr(const char *src);      /* 0 ok, -1 error (already printed) */
+int     scm_eval_stream(int (*getc_fn)(void *ctx), void *ctx);  /* getc -> -1 at end */
+void    scm_discard_line(void);              /* drop the rest of the typed line   */
 
 /* helpers for primitives */
 scm_obj scm_arg(scm_obj *args);              /* pop next argument               */

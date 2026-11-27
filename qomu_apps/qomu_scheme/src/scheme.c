@@ -149,6 +149,8 @@ static int last_cr;
 
 /* reader */
 static const char *rd_str;
+static int (*rd_fn)(void *);              /* stream source (flash files) */
+static void *rd_ctx;
 static int rd_unget[4];
 static int rd_nunget;
 
@@ -780,6 +782,7 @@ static int rd_getc(void)
 {
     if (rd_nunget > 0) return rd_unget[--rd_nunget];
     if (rd_str) return *rd_str ? (unsigned char)*rd_str++ : -1;
+    if (rd_fn) return rd_fn(rd_ctx);
     return con_getc();
 }
 
@@ -2206,11 +2209,14 @@ static scm_obj p_write_char(scm_obj a) { outc(char_arg(&a)->u.ch); return UNSPEC
 static scm_obj p_read(scm_obj a)
 {
     const char *saved = rd_str;
+    int (*saved_fn)(void *) = rd_fn;
     scm_obj o;
     (void)a;
     rd_str = NULL;
+    rd_fn = NULL;
     o = read_datum();
     rd_str = saved;
+    rd_fn = saved_fn;
     return o;
 }
 
@@ -2442,10 +2448,12 @@ void scm_init(void *heap_mem, size_t heap_bytes, const scm_io *the_io)
 
 /* ------------------------------------------------------------------ REPL */
 
-int scm_eval_cstr(const char *src)
+static int eval_source(const char *src, int (*fn)(void *), void *ctx)
 {
     jmp_buf jb, *saved_jmp = err_jmp;
     const char *saved_str = rd_str;
+    int (*saved_fn)(void *) = rd_fn;
+    void *saved_ctx = rd_ctx;
     int saved_gc = gctop;
     volatile int result = 0;
 
@@ -2458,6 +2466,8 @@ int scm_eval_cstr(const char *src)
         result = -1;
     } else {
         rd_str = src;
+        rd_fn = fn;
+        rd_ctx = ctx;
         rd_nunget = 0;
         for (;;) {
             scm_obj x;
@@ -2469,9 +2479,24 @@ int scm_eval_cstr(const char *src)
     }
     gctop = saved_gc;
     rd_str = saved_str;
+    rd_fn = saved_fn;
+    rd_ctx = saved_ctx;
     rd_nunget = 0;
     err_jmp = saved_jmp;
     return result;
+}
+
+int scm_eval_cstr(const char *src) { return eval_source(src, NULL, NULL); }
+
+int scm_eval_stream(int (*getc_fn)(void *ctx), void *ctx)
+{
+    return eval_source(NULL, getc_fn, ctx);
+}
+
+void scm_discard_line(void)
+{
+    line_pos = line_len;
+    peeked_char = -2;
 }
 
 void scm_repl(void)
