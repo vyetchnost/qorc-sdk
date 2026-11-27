@@ -255,6 +255,7 @@ static void writer_flush(fs_writer *w)
 {
     uint32_t addr = slot_base(w->slot) + w->page * FS_PAGE;
     if (w->fill == 0) return;
+    w->crc = crc32_add(w->crc, w->buf, w->fill);    /* here, so backspace can undo */
     memset(w->buf + w->fill, 0xff, FS_PAGE - w->fill);
     if ((w->page % (FS_SECTOR / FS_PAGE)) == 0) flash_erase(addr);
     flash_program(addr, w->buf);
@@ -267,19 +268,30 @@ static void writer_putc(fs_writer *w, int c)
     uint8_t b = (uint8_t)c;
     if (w->len >= FS_DATA_MAX) { w->too_big = 1; return; }   /* reported at the end */
     w->buf[w->fill++] = b;
-    w->crc = crc32_add(w->crc, &b, 1);
     w->len++;
     if (w->fill == FS_PAGE) writer_flush(w);
+}
+
+/* Backspace: only within the current line, and only while it is still in
+ * the page buffer (a line can't be taken back once its page is in flash). */
+static int writer_unputc(fs_writer *w)
+{
+    if (w->too_big || w->fill == 0 || w->buf[w->fill - 1] == '\n') return 0;
+    w->fill--;
+    w->len--;
+    return 1;
 }
 
 static void writer_end(fs_writer *w)
 {
     fs_hdr h;
-    uint32_t crc = 0xffffffffu, len = w->len, want = w->crc ^ 0xffffffffu;
+    uint32_t crc = 0xffffffffu, len, want;
     int c;
 
     if (w->too_big) scm_error("file too big (max 65280 bytes); not saved", NULL);
     writer_flush(w);
+    len = w->len;
+    want = w->crc ^ 0xffffffffu;
 
     /* read back before committing the header */
     {
@@ -392,8 +404,17 @@ static scm_obj p_save(scm_obj args)
 
 /* (write-file "name"): the following lines, up to one holding only "." or
  * a Ctrl-D, go straight to flash a page at a time. CR and CRLF become LF.
- * Leading blank lines are dropped. Ctrl-C cancels; the old file, if any,
- * is left untouched. */
+ * Leading blank lines are dropped. Input is echoed; backspace works within
+ * the line being typed. Ctrl-C cancels; the old file, if any, is left
+ * untouched. */
+static void echo(int c)
+{
+    char t[2];
+    t[0] = (char)c;
+    t[1] = 0;
+    scm_puts(t);                            /* LF -> CRLF on the tty */
+}
+
 static scm_obj p_write_file(scm_obj args)
 {
     static fs_writer w;
@@ -414,8 +435,17 @@ static scm_obj p_write_file(scm_obj args)
         if (c == '\r') c = '\n';
         if (c == 4) {                       /* Ctrl-D: end, keeping a pending "." */
             if (dot) writer_putc(&w, '.');
+            if (!bol) scm_puts("\n");
             break;
         }
+        if (c == 8 || c == 127) {
+            if (dot) { dot = 0; scm_puts("\b \b"); }
+            else if (writer_unputc(&w)) scm_puts("\b \b");
+            bol = w.fill ? w.buf[w.fill - 1] == '\n' : w.len == 0;
+            continue;
+        }
+        if (c < ' ' && c != '\n' && c != '\t') continue;   /* other control keys */
+        echo(c);
         if (dot) {
             dot = 0;
             if (c == '\n') break;           /* the terminator line */
