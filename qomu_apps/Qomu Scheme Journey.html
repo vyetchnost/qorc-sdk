@@ -386,7 +386,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
     <div class="eyebrow">Where a pasted byte travels</div>
     <h2>The serial path, end to end</h2>
   </div>
-  <p class="prose">Every stage between the keyboard and the reader, with what it does when it can't keep up and what we know about it. The two bytes missing from the <code>screen</code> paste sit at file offsets 5118–5119, just before the 5 KB mark and at the end of a 32-byte USB packet. Testing the links one at a time on Tuesday found them: <code>screen</code> drops typed input when its writes to the port stall.</p>
+  <p class="prose">Every stage between the keyboard and the reader, with what it does when it can't keep up and what we know about it. For the hardware side as a picture (the register struct, the bus bridge, the gateware blocks, the clocks and the pins), see <a href="Qomu%20USB%20Serial%20Map.svg">Qomu USB Serial Map</a>. The two bytes missing from the <code>screen</code> paste sit at file offsets 5118–5119, just before the 5 KB mark and at the end of a 32-byte USB packet. Testing the links one at a time on Tuesday found them: <code>screen</code> drops typed input when its writes to the port stall.</p>
   <div class="tbl">
     <table>
       <thead><tr><th>Stage</th><th>Where</th><th>When it can't keep up</th><th>Status</th></tr></thead>
@@ -866,6 +866,7 @@ sq loaded&gt; (sq 12)
         <tr><td><code>tools/paste_test.py</code></td><td><span class="chip ok">new</span></td><td>Sends a file straight to the port and reports byte counts, errors and <code>name=value</code> lines</td></tr>
         <tr><td><code>src/scheme_fs.c</code>, <code>inc/scheme_fs.h</code></td><td><span class="chip ok">new</span></td><td>Flash file store and boot log; portable, with flash access through an <code>fs_port</code> table (the Qomu port is in <code>scheme_task.c</code>)</td></tr>
         <tr><td><code>tools/fs_put.py</code></td><td><span class="chip ok">new</span></td><td>Saves a local file into flash storage from the Pi</td></tr>
+        <tr><td><code>tools/usb_serial_map.py</code></td><td><span class="chip ok">new</span></td><td>Draws <code>qomu_apps/Qomu USB Serial Map.svg</code>: USB serial from the C struct to D+/D−</td></tr>
         <tr><td><code>bench.scm</code></td><td><span class="chip ok">new</span></td><td>Times <code>(fib 20)</code> five times and reports free cells</td></tr>
         <tr><td><code>GCC_Project/qomu.ld</code></td><td><span class="chip host">changed</span></td><td><code>rom</code> 188 KB, <code>ram</code> from <code>0x2002F000</code></td></tr>
         <tr><td><code>GCC_Project/config.mk</code></td><td><span class="chip host">changed</span></td><td>Make 4.4 fix</td></tr>
