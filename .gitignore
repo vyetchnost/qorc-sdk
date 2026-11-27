@@ -50,3 +50,4 @@ Symbiflow_v*.gz.run
 *.bak
 
 TinyFPGA-Programmer-Application/
+.vscode/settings.json
