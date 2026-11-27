@@ -561,6 +561,7 @@ static const char board_prelude[] =
 "  (display \"  (led 'red|'green|'blue on?) (blink 'blue 5 200) (gpio-write n v) (gpio-read n)\\n\")\n"
 "  (display \"  (hex n) (room) (gc) (heap-free) (stack-free) (rx-dropped)\\n\")\n"
 "  (display \"Files: (files) (load 'f) (cat 'f) (write-file 'f) (save 'f str) (delete-file 'f)\\n\")\n"
+"  (display \"  (file-exists? 'f); a file named boot runs at power-up; (boot-ok)\\n\")\n"
 "  (display \"Ctrl-C interrupts a running program; up-arrow recalls the last line.\\n\"))\n";
 
 /* ---------------------------------------------------------------- task */
@@ -627,7 +628,8 @@ static void scheme_task(void *arg)
     scm_eval_cstr(board_prelude);
 
     /* Run the "boot" file before waiting for a terminal, so it works on a
-     * USB charger too. Ctrl-C (or any error) ends it and the REPL starts. */
+     * USB charger too. Ctrl-C (or any error) ends it and the REPL starts.
+     * If the last two power-ups never finished it, it is skipped. */
     scheme_fs_autorun();
 
     /* Green while waiting: the banner prints once someone is typing, i.e. a
@@ -658,9 +660,14 @@ static void scheme_task(void *arg)
     rx_break = 0;
     taskEXIT_CRITICAL();
 
+    scm_eval_cstr("(gc)");     /* count after collecting what boot left behind */
     scm_puts("\nQomu Scheme - ");
     scm_display(scm_from_int((int64_t)scm_free_cells()));
     scm_puts(" cells free. Type (help) for board commands.\n");
+    if (scheme_fs_boot_skipped())
+        scm_puts("Skipped the boot file: the last two power-ups never finished it.\n"
+                 "Fix it with (write-file 'boot), remove it with (delete-file 'boot),\n"
+                 "or run it again on the next power-up with (boot-ok).\n");
 
     for (;;)
         scm_repl();         /* only returns on EOF, which the tty never sends */

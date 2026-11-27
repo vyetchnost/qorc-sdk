@@ -124,7 +124,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
 <header>
   <div class="eyebrow">qorc-sdk · Qomu · EOS S3 · 22–26 Nov 2026</div>
   <h1>Qomu Scheme: from question to REPL</h1>
-  <p class="lede">How a Scheme interpreter went from "do you think we can?" to a working prompt on the Qomu's USB-serial console in one morning: what we built, how it fits into the SDK, and every bug we hit on the way to the first <code>&gt;</code>. <a href="#part-two">Part two</a> follows a paste problem down into the eFPGA: the USB core rebuilt from source with the open toolchain, three gateware bugs, RX flow control, and measurements that traced the last two missing bytes to <code>screen</code>. <a href="#part-three">Part three</a> makes the interpreter 3.3× faster and tidies up the gateware until every path meets timing. <a href="#part-four">Part four</a> tries 72 MHz, parks it, and keeps three gateware fixes it uncovered: the suite now runs over USB in 32.8 s instead of 52.9.</p>
+  <p class="lede">How a Scheme interpreter went from "do you think we can?" to a working prompt on the Qomu's USB-serial console in one morning: what we built, how it fits into the SDK, and every bug we hit on the way to the first <code>&gt;</code>. <a href="#part-two">Part two</a> follows a paste problem down into the eFPGA: the USB core rebuilt from source with the open toolchain, three gateware bugs, RX flow control, and measurements that traced the last two missing bytes to <code>screen</code>. <a href="#part-three">Part three</a> makes the interpreter 3.3× faster and tidies up the gateware until every path meets timing. <a href="#part-four">Part four</a> tries 72 MHz, parks it, and keeps three gateware fixes it uncovered: the suite now runs over USB in 32.8 s instead of 52.9. <a href="#part-five">Part five</a> gives programs somewhere to live: named files in the spare megabyte of SPI flash, a <code>boot</code> file that runs at power-up, and a boot log that stops a bad one from locking you out.</p>
   <div class="facts">
     <div class="fact"><b>Written from scratch</b><span>A ~2,400-line portable C99 interpreter. TinyScheme wasn't reachable from the sandbox, so we wrote our own.</span></div>
     <div class="fact"><b>Built on helloworld</b><span>Same USB-serial gateware and FreeRTOS startup. The CLI task is replaced by a Scheme task.</span></div>
@@ -725,6 +725,117 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
   </div>
 </section>
 
+
+<!-- ================= PART FIVE ================= -->
+<section id="part-five">
+  <div class="head">
+    <div class="eyebrow">Part five · Friday morning</div>
+    <h2>Flash storage</h2>
+  </div>
+  <div class="prose">
+    <p>Until now everything typed into the REPL was gone at power-off. The Qomu's 2 MB SPI flash holds the bootloader, its metadata, the gateware and the M4 app, all below 1 MB; the BSP map lists the top megabyte, 0x100000–0x1FFFFF, as unused. That megabyte is now a small file store: fifteen 64 KB slots, each a header page and up to 65,280 bytes of Scheme source. The rule from the start was to touch nothing below 1 MB, and every flash access is range-checked twice to enforce it.</p>
+    <p>Of three layouts (a raw region, a log-structured store, named slots) Andrey picked named slots: "simple, direct and sufficient". A save writes the new copy to a free slot, reads it back, and only then writes its header; the old copy is deleted after that. A sequence number in the header settles the instant between those two writes, so a power cut leaves either version but never neither. The logic was built against a simulated NOR chip on the host first, with a cut injected after every page write.</p>
+  </div>
+  <ul class="stack">
+    <li><div class="dot"></div><div class="what"><b>Reading the driver first</b><span>QuickLogic's <code>SysFlash</code> library already does 4 KB erases and 256-byte page writes. Its probe table lacks the Qomu's GigaDevice chip, so we use <code>read_flash_id()</code> like the bootloader, at the bootloader's 5 MHz.</span></div><div class="when">early</div></li>
+    <li><div class="dot win"></div><div class="what"><b>First light</b><span><code>(files)</code> found an empty store, <code>(save 'hi …)</code> and <code>(load 'hi)</code> printed 42, and after unplugging and replugging it was still there.</span></div><div class="when">06:26</div></li>
+    <li><div class="dot bug"></div><div class="what"><b>A paste you couldn't see</b><span><code>write-file</code> didn't echo, so a paste without a final newline looked like nothing happened; the second paste joined it on one line. Now it echoes, and backspace works within the current line.</span></div><div class="when">06:28</div></li>
+    <li><div class="dot win"></div><div class="what"><b>The suite from flash</b><span><code>fs_put.py tests.scm</code> saved 6,238 bytes from the Pi; <code>(load 'tests)</code> streamed it straight from flash: 137 of 137.</span></div><div class="when">06:40</div></li>
+    <li><div class="dot win"></div><div class="what"><b>Autorun and its way out</b><span>A <code>boot</code> file blinked blue at power-up on its own; one that blinked red forever stopped at Ctrl-C and gave the REPL back.</span></div><div class="when">06:40</div></li>
+    <li><div class="dot"></div><div class="what"><b>A boot log for the crash case</b><span>Ctrl-C can't rescue a boot file that faults the chip, and reflashing the firmware doesn't touch the files. Now each power-up that starts <code>boot</code> is logged, and two unfinished starts in a row skip it.</span></div><div class="when">07:13</div></li>
+  </ul>
+</section>
+
+<section>
+  <div class="head">
+    <div class="eyebrow">Part five</div>
+    <h2>How the store works</h2>
+  </div>
+  <div class="prose">
+    <p><b>Slots.</b> Slot <i>n</i> starts at 0x100000 + <i>n</i> × 64 KB. Page 0 is the header: magic <code>QSF1</code>, length, CRC-32, sequence number, name. The text starts at page 1. Writing streams a page at a time and erases each 4 KB sector just before its first page, so a short file costs one erase. Deleting programs the magic to zero; NOR bits only go from 1 to 0, so no erase is needed.</p>
+    <p><b>Reading.</b> <code>load</code> checks the CRC, then hands a page-at-a-time reader to a new <code>scm_eval_stream()</code> in the interpreter core. A file's size isn't limited by RAM, and files can load other files.</p>
+    <p><b>The boot log</b> is the first sector of the 16th slot, one byte per power-up that runs <code>boot</code>: <code>0F</code> when it starts, <code>00</code> when it returns (finished, an error, or Ctrl-C). If the last two records are both <code>0F</code>, those power-ups never got back to the firmware, and <code>boot</code> is skipped with a note under the banner. Saving or deleting <code>boot</code>, or <code>(boot-ok)</code> at the REPL, re-arms it. A program meant to run forever calls <code>(boot-ok)</code> once it's up, so unplugging it doesn't count against it. The sector is erased once every 4,096 records.</p>
+  </div>
+<pre><code>&gt; (write-file 'sq)
+Paste the file, then a line with only . (or Ctrl-D). Ctrl-C cancels.
+(define (sq x) (* x x))
+(display "sq loaded")
+.
+Saved sq: 46 bytes
+&gt; (load 'sq)
+sq loaded&gt; (sq 12)
+144
+&gt; (files)
+  sq                          46 bytes
+  tests                       6238 bytes
+2 of 15 slots used (max 65280 bytes per file)</code></pre>
+</section>
+
+<section>
+  <div class="head">
+    <div class="eyebrow">Part five</div>
+    <h2>What broke, part five</h2>
+  </div>
+  <div class="gotchas">
+    <div class="gotcha">
+      <h3>The page writer advances twice <span class="chip bug">upstream</span></h3>
+      <div class="body">
+        <p><code>spiflash_write()</code> adds each chunk to its position inside the loop body and again in the <code>for</code> statement, so any write longer than one chunk skips data and stops early. It also splits a partial page into halves.</p>
+        <p class="fix"><b>Workaround:</b> exactly one whole, page-aligned 256-byte write per call, where the loop runs once.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>Block erases ignore the low address bits <span class="chip host">driver</span></h3>
+      <div class="body">
+        <p><code>spiflash_erase()</code> picks a 64 KB or 32 KB block erase when the length allows. The chip erases the aligned block containing the address, so an unaligned start would erase below it.</p>
+        <p class="fix"><b>Rule:</b> one 4 KB sector per call, aligned and range-checked.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>Reads move whole words <span class="chip host">driver</span></h3>
+      <div class="body">
+        <p>The read path always uses DMA, which rounds the length up to a multiple of 4.</p>
+        <p class="fix"><b>Rule:</b> word-aligned buffers and lengths rounded up to 4; the store never reads into a buffer that couldn't take the extra bytes.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>An error mid-paste fed the REPL <span class="chip ok">ours</span></h3>
+      <div class="body">
+        <p>On the host, a file over the size limit raised its error at the overflow, and the rest of the paste went to the REPL as code.</p>
+        <p class="fix"><b>Fix:</b> keep reading to the terminator, then report.</p>
+      </div>
+    </div>
+    <div class="gotcha">
+      <h3>The banner counted garbage <span class="chip ok">ours</span></h3>
+      <div class="body">
+        <p>Free cells read 3031, then 2885, then 2604 across power-ups: the banner counted before collecting what <code>boot</code> had left behind.</p>
+        <p class="fix"><b>Fix:</b> <code>(gc)</code> before the banner.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="head">
+    <div class="eyebrow">On the board</div>
+    <h2>Measurements, part five</h2>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Check</th><th>Result</th><th>Reading</th></tr></thead>
+      <tbody>
+        <tr><td>Flash detected, empty store</td><td class="num">0 of 16</td><td>SPI set-up, chip ID and header scan on first boot (16 slots before the boot log took one).</td></tr>
+        <tr><td>Save, unplug, replug, load</td><td class="num">42</td><td>The file survives power-off.</td></tr>
+        <tr><td><code>tests.scm</code> via <code>fs_put.py</code>, then <code>(load 'tests)</code></td><td class="num">137 / 137</td><td>6,238 bytes streamed to flash under USB flow control, then evaluated from flash.</td></tr>
+        <tr><td>Autorun</td><td class="num">3 blinks</td><td>Ran with no terminal open, then waited with green on.</td></tr>
+        <tr><td>Ctrl-C on an endless boot loop</td><td class="num">REPL</td><td>Error: interrupted, then the banner.</td></tr>
+        <tr><td>Simulated power cuts (host)</td><td class="num">30 of 30</td><td>A cut after every page write of a save: always the old or the new version.</td></tr>
+        <tr><td>Boot log (host)</td><td class="num">pass</td><td>Skip after two unfinished starts, re-arm by save, delete and <code>(boot-ok)</code>, wrap at 4,096 records. On the board: pending.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
 <!-- Files -->
 <section>
   <div class="head">
@@ -750,6 +861,8 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td><code>gateware/usb2serial/build.sh</code>, <code>iomux2c.py</code></td><td><span class="chip ok">new</span></td><td>Check, compile, install and simulate; pad script to C</td></tr>
         <tr><td><code>gateware/usb2serial/sim/</code></td><td><span class="chip ok">new</span></td><td>Testbench: enumeration, data both ways, flow control</td></tr>
         <tr><td><code>tools/paste_test.py</code></td><td><span class="chip ok">new</span></td><td>Sends a file straight to the port and reports byte counts, errors and <code>name=value</code> lines</td></tr>
+        <tr><td><code>src/scheme_fs.c</code>, <code>inc/scheme_fs.h</code></td><td><span class="chip ok">new</span></td><td>Flash file store and boot log; portable, with flash access through an <code>fs_port</code> table (the Qomu port is in <code>scheme_task.c</code>)</td></tr>
+        <tr><td><code>tools/fs_put.py</code></td><td><span class="chip ok">new</span></td><td>Saves a local file into flash storage from the Pi</td></tr>
         <tr><td><code>bench.scm</code></td><td><span class="chip ok">new</span></td><td>Times <code>(fib 20)</code> five times and reports free cells</td></tr>
         <tr><td><code>GCC_Project/qomu.ld</code></td><td><span class="chip host">changed</span></td><td><code>rom</code> 188 KB, <code>ram</code> from <code>0x2002F000</code></td></tr>
         <tr><td><code>GCC_Project/config.mk</code></td><td><span class="chip host">changed</span></td><td>Make 4.4 fix</td></tr>
@@ -782,8 +895,12 @@ docker run --rm --platform linux/amd64 -v ~/src/qorc-sdk:/qorc-sdk symbiflow-qom
 # writes fpga/qomu_fpga.c and fpga/qomu_fpga_iomux.c; commit, then build on the Pi
 
 # Pi: load a file without a terminal program (picocom closed)
-python3 tools/paste_test.py tests.scm</code></pre>
-  <p class="cap">Flashing only writes the m4app region. To go back, flash <code>qomu_apps/qomu-initial-binaries/qomu_helloworldsw.bin</code> the same way. To return to the SpDE gateware but keep Scheme, copy <code>fpga/qomu_fpga.c.spde</code> over <code>fpga/qomu_fpga.c</code>, delete <code>fpga/qomu_fpga_iomux.c</code> (its call in <code>main()</code> is weak) and rebuild.</p>
+python3 tools/paste_test.py tests.scm
+
+# Pi: save a file into flash storage (picocom closed); "boot" runs at power-up
+python3 tools/fs_put.py tests.scm
+python3 tools/fs_put.py blinky.scm --name boot</code></pre>
+  <p class="cap">Flashing only writes the m4app region; files in the top megabyte stay put. To go back, flash <code>qomu_apps/qomu-initial-binaries/qomu_helloworldsw.bin</code> the same way. To return to the SpDE gateware but keep Scheme, copy <code>fpga/qomu_fpga.c.spde</code> over <code>fpga/qomu_fpga.c</code>, delete <code>fpga/qomu_fpga_iomux.c</code> (its call in <code>main()</code> is weak) and rebuild.</p>
 </section>
 
 <!-- Next -->
@@ -795,7 +912,7 @@ python3 tools/paste_test.py tests.scm</code></pre>
   <ol class="todo">
     <li><b>72 MHz, parked:</b> the 3× receiver build (<code>USB_CLK72</code>, <code>SCHEME_CPU_MHZ 72</code>) is in the tree. Next: flash one build and power-cycle it several times to see whether start-up fails intermittently. Notes in <code>gateware/usb2serial/README.md</code>.</li>
     <li>More timing margin at 48 MHz: the line-state logic (<code>ls_trans</code>) could get the same restructuring as the boundary detector.</li>
-    <li>Save and load Scheme source in the spare SPI flash, so programs survive a power cycle.</li>
+    <li>Touch pads: a capacitive-sense primitive would make a "hold to skip boot" option possible, and give programs four inputs.</li>
     <li>Primitives for registers in your own FPGA logic, now that the gateware builds from source.</li>
     <li>More interpreter speed: profile real programs; cache global lookups; fewer cells for <code>let</code> and closures.</li>
     <li>Request our own USB product ID. QuickLogic's <code>1d50:6140</code>/<code>6141</code> were never registered for it: Openmoko's registry assigns them to Osmocom's osmo-ASF4-DFU bootloader and sysmoOCTSIM reader (TinyFPGA, whose USB core ours descends from, has <code>6130</code>). Open projects qualify; you apply with a pull request to <code>openmoko/openmoko-usb-oui</code>, then change <code>usbpid</code> in <code>main.c</code>.</li>
@@ -803,7 +920,7 @@ python3 tools/paste_test.py tests.scm</code></pre>
   </ol>
 </section>
 
-<footer>Written by Claude with Andrey Vyetchnost, 22–26 November 2026. A companion to <em>Qomu App Anatomy</em>.</footer>
+<footer>Written by Claude with Andrey Vyetchnost, 22–27 November 2026. A companion to <em>Qomu App Anatomy</em>.</footer>
 </div>
 </body>
 </html>

@@ -9,6 +9,7 @@
  *  1 MB; every flash access here is checked against FS_BASE..FS_END
  *  first, so nothing below 1 MB can be erased or written.
  *
+ *  Slots 0-14 hold files; the first sector of slot 15 is the boot log.
  *  Slot = one header page (256 B) + up to 65280 bytes of text.
  *  Header: magic "QSF1", length, CRC-32 of the text, NUL-terminated name.
  *  The header page is programmed last, after the text has been written
@@ -32,7 +33,9 @@
 #define FS_BASE       0x100000u
 #define FS_END        0x200000u
 #define FS_SLOT_BYTES 0x10000u
-#define FS_SLOTS      ((FS_END - FS_BASE) / FS_SLOT_BYTES)      /* 16 */
+#define FS_SLOTS      ((FS_END - FS_BASE) / FS_SLOT_BYTES - 1)  /* 15 files   */
+#define FS_LOG        (FS_END - FS_SLOT_BYTES)                  /* 16th slot: boot log */
+#define FS_LOG_BYTES  FS_SECTOR                                 /* one record per byte */
 #define FS_PAGE       256u
 #define FS_SECTOR     4096u
 #define FS_DATA_MAX   (FS_SLOT_BYTES - FS_PAGE)                 /* 65280 */
@@ -48,6 +51,7 @@ typedef struct {
 } fs_hdr;                                                       /* 44 bytes */
 
 static const fs_port *port;
+static void boot_rearm_if(const char *name);
 static int fs_ok;
 static uint8_t page_buf[FS_PAGE] __attribute__((aligned(4)));
 
@@ -236,7 +240,7 @@ static void writer_begin(fs_writer *w, const char *name)
         }
     }
     if (free_slot < 0) {
-        if (w->old < 0) scm_error("flash full: 16 files; delete one first", NULL);
+        if (w->old < 0) scm_error("flash full: 15 files; delete one first", NULL);
         free_slot = w->old;                 /* last slot: overwrite in place */
         w->old = -1;
     }
@@ -317,6 +321,7 @@ static void writer_end(fs_writer *w)
     flash_program(slot_base(w->slot), page_buf);
 
     if (w->old >= 0) delete_slot(w->old);
+    boot_rearm_if(w->name);
 }
 
 /* ---------------------------------------------------------------- primitives */
@@ -362,6 +367,7 @@ static scm_obj p_delete_file(scm_obj args)
     slot = find_file(name_arg(&args), &h);
     if (slot < 0) return SCM_FALSE;
     delete_slot(slot);
+    boot_rearm_if(h.name);
     return SCM_TRUE;
 }
 
@@ -469,6 +475,102 @@ static scm_obj p_write_file(scm_obj args)
     return SCM_UNSPEC;
 }
 
+/* ---------------------------------------------------------------- boot log
+ *
+ * Autorun safety. One byte per power-up that runs "boot":
+ *   0xFF unused, 0x0F started, 0x00 finished.
+ * "Finished" is written when the boot file returns (normally, on an error
+ * or on Ctrl-C), or earlier when it calls (boot-ok). If the last two
+ * records are both "started", those two power-ups never got back to the
+ * firmware (a crash, a hang, or a long-running program unplugged), so the
+ * boot file is skipped and the REPL comes up instead. Saving or deleting
+ * "boot", or calling (boot-ok) at the REPL, appends a "finished" record
+ * and re-arms it. Bits only go 1->0, so a record costs one page program;
+ * the sector is erased once every 4096 records.
+ */
+#define LOG_STARTED  0x0F
+#define LOG_FINISHED 0x00
+
+static int log_next = -1;                   /* index of the first unused record */
+static int log_cur = -1;                    /* record of the boot now running   */
+static int boot_skipped;
+
+static void log_scan(uint8_t *prev1, uint8_t *prev2)
+{
+    uint32_t off;
+    int i;
+    *prev1 = *prev2 = 0xff;
+    log_next = FS_LOG_BYTES;
+    for (off = 0; off < FS_LOG_BYTES; off += FS_PAGE) {
+        flash_read(FS_LOG + off, page_buf, FS_PAGE);
+        for (i = 0; i < (int)FS_PAGE; i++) {
+            if (page_buf[i] == 0xff) { log_next = (int)(off + (uint32_t)i); return; }
+            *prev2 = *prev1;
+            *prev1 = page_buf[i];
+        }
+    }
+}
+
+static void log_mark(int idx, uint8_t val)
+{
+    memset(page_buf, 0xff, FS_PAGE);
+    page_buf[idx % FS_PAGE] = val;
+    flash_program(FS_LOG + (uint32_t)(idx & ~(int)(FS_PAGE - 1)), page_buf);
+}
+
+static int log_append(uint8_t val)
+{
+    uint8_t p1, p2;
+    if (log_next < 0) log_scan(&p1, &p2);
+    if (log_next >= (int)FS_LOG_BYTES) {
+        flash_erase(FS_LOG);
+        log_next = 0;
+    }
+    log_mark(log_next, val);
+    return log_next++;
+}
+
+static void boot_rearm_if(const char *name)
+{
+    if (strcmp(name, "boot") == 0) log_append(LOG_FINISHED);
+}
+
+static scm_obj p_boot_ok(scm_obj args)
+{
+    (void)args;
+    need_fs();
+    if (log_cur >= 0) {                     /* called by the running boot file */
+        log_mark(log_cur, LOG_FINISHED);
+        log_cur = -1;
+    } else {                                /* at the REPL: re-arm after a skip */
+        log_append(LOG_FINISHED);
+        boot_skipped = 0;
+    }
+    return SCM_UNSPEC;
+}
+
+static scm_obj p_autorun(scm_obj args)
+{
+    fs_reader r;
+    fs_hdr h;
+    uint8_t p1, p2;
+    int idx;
+    (void)args;
+    if (find_file("boot", &h) < 0) return SCM_FALSE;
+    log_scan(&p1, &p2);
+    if (p1 == LOG_STARTED && p2 == LOG_STARTED) {
+        boot_skipped = 1;
+        return SCM_FALSE;
+    }
+    idx = log_append(LOG_STARTED);
+    log_cur = idx;
+    open_file("boot", &r);
+    scm_eval_stream(reader_getc, &r);       /* errors and ^C end it here */
+    if (log_cur >= 0) log_mark(log_cur, LOG_FINISHED);
+    log_cur = -1;
+    return SCM_TRUE;
+}
+
 /* ---------------------------------------------------------------- setup */
 
 int scheme_fs_init(const fs_port *p)
@@ -482,13 +584,17 @@ int scheme_fs_init(const fs_port *p)
     scm_defprim("load", p_load, 1, 1);
     scm_defprim("save", p_save, 2, 2);
     scm_defprim("write-file", p_write_file, 1, 1);
+    scm_defprim("boot-ok", p_boot_ok, 0, 0);
+    scm_defprim("%autorun", p_autorun, 0, 0);
     return fs_ok;
 }
 
-/* Load "boot" if it exists. Runs under scm_eval_cstr's error handler, so a
- * flash error, a Scheme error or Ctrl-C just ends it. */
+/* Load "boot" if it exists and the boot log allows. Runs under
+ * scm_eval_cstr's error handler, so a flash error just ends it. */
 void scheme_fs_autorun(void)
 {
-    if (fs_ok)
-        scm_eval_cstr("(if (file-exists? \"boot\") (load \"boot\"))");
+    if (fs_ok) scm_eval_cstr("(%autorun)");
+    log_cur = -1;
 }
+
+int scheme_fs_boot_skipped(void) { return boot_skipped; }

@@ -16,6 +16,7 @@ typedef struct {
 } fs_port;
 
 int  scheme_fs_init(const fs_port *port);   /* registers the primitives; 1 if usable */
-void scheme_fs_autorun(void);               /* (load "boot") if it exists            */
+void scheme_fs_autorun(void);               /* (load "boot") if it exists and allowed */
+int  scheme_fs_boot_skipped(void);          /* 1: last two boots never finished       */
 
 #endif

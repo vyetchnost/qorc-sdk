@@ -10,7 +10,12 @@ Files
 
 - ``src/scheme.c``, ``inc/scheme.h`` - portable interpreter core (no board code)
 - ``inc/scheme_port.h`` - FreeRTOS hooks (string/vector bodies from ``pvPortMalloc``)
-- ``src/scheme_task.c`` - console I/O over USB serial, board primitives, the task
+- ``src/scheme_task.c`` - console I/O over USB serial, board primitives, the
+  SPI flash port for file storage, the task
+- ``src/scheme_fs.c``, ``inc/scheme_fs.h`` - named files in SPI flash (portable;
+  the flash access comes in through an ``fs_port`` table)
+- ``tools/paste_test.py`` - paste a file through the serial port and report
+- ``tools/fs_put.py`` - save a local file into flash storage
 - ``tests.scm`` - regression tests; paste into the REPL or run on a host build
 
 Build and flash
@@ -60,6 +65,7 @@ Board primitives
     (blink 'blue 5 200)
     (gpio-write n v) (gpio-read n)
     (hex n) (room) (gc) (heap-free) (stack-free) (help)
+    ; files: see File storage below
 
 Example::
 
@@ -68,6 +74,55 @@ Example::
     > (define (fib n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
     > (fib 20)
     6765
+
+File storage
+------------
+
+Scheme source can be kept in the top megabyte of the 2 MB SPI flash
+(0x100000-0x1FFFFF, unused by the bootloader map) and survives power-off.
+Names are strings or symbols, 1-27 characters, no spaces::
+
+    (files)                 ; list names and sizes
+    (load 'lib)             ; evaluate a file; files may load other files
+    (cat 'lib)              ; print it
+    (write-file 'lib)       ; then paste the text and end with a line
+                            ;   holding only "." (or Ctrl-D); Ctrl-C cancels
+    (save 'lib "(define x 1)")
+    (delete-file 'lib)      ; #t if it existed
+    (file-exists? 'lib)
+    (boot-ok)               ; see below
+
+From the Pi, with the terminal closed::
+
+    python3 tools/fs_put.py lib.scm            # saved as "lib"
+    python3 tools/fs_put.py x.scm --name boot
+
+Fifteen files of up to 65280 bytes each. Loading streams from flash, so a
+file's size is not limited by RAM, but everything it defines still has to
+fit in the cell heap.
+
+How it is stored: 64 KB slots, each a header page (magic, length, CRC-32,
+sequence number, name) followed by the text. A new copy is written to a
+free slot, read back and checked, and only then gets its header; the old
+copy is deleted after that. A power cut during a save leaves either the old
+or the new version. All flash access is checked against the 0x100000-
+0x1FFFFF range in both ``scheme_fs.c`` and the board port, and erases are
+single 4 KB sectors, so the bootloader, gateware and firmware below 1 MB
+cannot be touched.
+
+**Autorun.** A file named ``boot`` runs at power-up, before the REPL waits
+for a terminal, so it also works on a USB charger. Ctrl-C (or an error)
+ends it and the REPL starts. A boot log in the 16th slot records each
+power-up that starts ``boot`` and whether it finished. If the last two
+never finished (a crash, a hang, or a long-running program that was
+unplugged), ``boot`` is skipped and the REPL says so. Saving or deleting
+``boot``, or calling ``(boot-ok)`` at the REPL, re-arms it.
+
+A boot program meant to run forever should call ``(boot-ok)`` once it is
+set up, so pulling the plug doesn't count against it::
+
+    (boot-ok)
+    (let loop () (blink 'blue 1 500) (loop))
 
 Console
 -------
