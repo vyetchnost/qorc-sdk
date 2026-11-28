@@ -852,11 +852,11 @@ sq loaded&gt; (sq 12)
         <tr><td><code>src/scheme.c</code>, <code>inc/scheme.h</code></td><td><span class="chip ok">new</span></td><td>Portable interpreter core and its API</td></tr>
         <tr><td><code>inc/scheme_port.h</code></td><td><span class="chip ok">new</span></td><td>FreeRTOS malloc hooks, root-stack and line-length sizes; <code>SCM_OPTIMIZE_SPEED</code> (<code>-O2</code> for <code>scheme.c</code>)</td></tr>
         <tr><td><code>src/scheme_task.c</code></td><td><span class="chip ok">new</span></td><td>USB console I/O, batched RX interrupt and 8 KB ring, board and diagnostic primitives (<code>fifo-stats</code>, <code>usb-dbg</code>, <code>bench-fpga-read</code>), the task; <code>SCHEME_USB_DIAG</code> for bring-up diagnostics</td></tr>
-        <tr><td><code>tests.scm</code>, <code>README.rst</code></td><td><span class="chip ok">new</span></td><td>Regression suite; build, sizing and language notes</td></tr>
+        <tr><td><code>scm/tests.scm</code>, <code>README.rst</code></td><td><span class="chip ok">new</span></td><td>Regression suite; build, sizing and language notes</td></tr>
         <tr><td><code>src/main.c</code></td><td><span class="chip host">changed</span></td><td><code>scheme_start_task()</code> instead of the CLI; <code>const</code> bitstream extern; weak <code>qomu_fpga_pads_init()</code> call before <code>load_fpga()</code></td></tr>
         <tr><td><code>inc/Fw_global_config.h</code></td><td><span class="chip host">changed</span></td><td><code>SCHEME_HEAP_BYTES</code> (48 KB), <code>SCHEME_STACK_BYTES</code> (20 KB)</td></tr>
         <tr><td><code>inc/FreeRTOSConfig.h</code></td><td><span class="chip host">changed</span></td><td><code>INCLUDE_uxTaskGetStackHighWaterMark</code> for <code>(stack-free)</code></td></tr>
-        <tr><td><code>fpga/qomu_fpga.c</code></td><td><span class="chip fpga">generated</span></td><td>Open-toolchain bitstream (18,990 words, <code>const</code>); the SpDE original is kept as <code>qomu_fpga.c.spde</code></td></tr>
+        <tr><td><code>fpga/qomu_fpga.c</code></td><td><span class="chip fpga">generated</span></td><td>Open-toolchain bitstream (18,990 words, <code>const</code>); the SpDE original is in git as <code>qomu_fpga.c.spde</code> up to tag <code>qomu_scheme_v0.3</code></td></tr>
         <tr><td><code>fpga/qomu_fpga_iomux.c</code></td><td><span class="chip fpga">generated</span></td><td><code>qomu_fpga_pads_init()</code>: pad setup for the USB pins</td></tr>
         <tr><td><code>gateware/docker/Dockerfile</code></td><td><span class="chip ok">new</span></td><td>Image <code>symbiflow-qomu</code>: ql_symbiflow v1.3.0 with pinned packages</td></tr>
         <tr><td><code>gateware/usb2serial/rtl/</code></td><td><span class="chip ok">new</span></td><td>The ported usb2serial core; every change is listed in <code>gateware/usb2serial/README.md</code></td></tr>
@@ -867,12 +867,13 @@ sq loaded&gt; (sq 12)
         <tr><td><code>src/scheme_fs.c</code>, <code>inc/scheme_fs.h</code></td><td><span class="chip ok">new</span></td><td>Flash file store and boot log; portable, with flash access through an <code>fs_port</code> table (the Qomu port is in <code>scheme_task.c</code>)</td></tr>
         <tr><td><code>tools/fs_put.py</code></td><td><span class="chip ok">new</span></td><td>Saves a local file into flash storage from the Pi</td></tr>
         <tr><td><code>tools/usb_serial_map.py</code></td><td><span class="chip ok">new</span></td><td>Draws <code>qomu_apps/Qomu USB Serial Map.svg</code>: USB serial from the C struct to D+/D−</td></tr>
-        <tr><td><code>bench.scm</code></td><td><span class="chip ok">new</span></td><td>Times <code>(fib 20)</code> five times and reports free cells</td></tr>
+        <tr><td><code>scm/bench.scm</code></td><td><span class="chip ok">new</span></td><td>Times <code>(fib 20)</code> five times and reports free cells</td></tr>
         <tr><td><code>GCC_Project/qomu.ld</code></td><td><span class="chip host">changed</span></td><td><code>rom</code> 188 KB, <code>ram</code> from <code>0x2002F000</code></td></tr>
         <tr><td><code>GCC_Project/config.mk</code></td><td><span class="chip host">changed</span></td><td>Make 4.4 fix</td></tr>
       </tbody>
     </table>
   </div>
+  <p class="cap">On 27 November the helloworld leftovers were removed: the CLI menu and the CLI library build, the unused host-protocol, audio and watchdog sources and headers, the SpDE conversion scripts, and 17 makefiles for libraries this app doesn't build.</p>
 </section>
 
 <!-- Build -->
@@ -899,12 +900,12 @@ docker run --rm --platform linux/amd64 -v ~/src/qorc-sdk:/qorc-sdk symbiflow-qom
 # writes fpga/qomu_fpga.c and fpga/qomu_fpga_iomux.c; commit, then build on the Pi
 
 # Pi: load a file without a terminal program (picocom closed)
-python3 tools/paste_test.py tests.scm
+python3 tools/paste_test.py scm/tests.scm
 
 # Pi: save a file into flash storage (picocom closed); "boot" runs at power-up
-python3 tools/fs_put.py tests.scm
+python3 tools/fs_put.py scm/tests.scm
 python3 tools/fs_put.py blinky.scm --name boot</code></pre>
-  <p class="cap">Flashing only writes the m4app region; files in the top megabyte stay put. To go back, flash <code>qomu_apps/qomu-initial-binaries/qomu_helloworldsw.bin</code> the same way. To return to the SpDE gateware but keep Scheme, copy <code>fpga/qomu_fpga.c.spde</code> over <code>fpga/qomu_fpga.c</code>, delete <code>fpga/qomu_fpga_iomux.c</code> (its call in <code>main()</code> is weak) and rebuild.</p>
+  <p class="cap">Flashing only writes the m4app region; files in the top megabyte stay put. To go back, flash <code>qomu_apps/qomu-initial-binaries/qomu_helloworldsw.bin</code> the same way. To return to the SpDE gateware but keep Scheme, restore it with <code>git show qomu_scheme_v0.3:qomu_apps/qomu_scheme/fpga/qomu_fpga.c.spde &gt; fpga/qomu_fpga.c</code>, delete <code>fpga/qomu_fpga_iomux.c</code> (its call in <code>main()</code> is weak) and rebuild.</p>
 </section>
 
 <!-- Next -->

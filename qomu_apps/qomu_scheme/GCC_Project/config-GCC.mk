@@ -42,7 +42,6 @@ export INCLUDE_DIRS=-I"$(PROJ_DIR)" \
                  -I"$(PROJ_ROOT)/freertos_gateware/inc" \
                  -I"$(PROJ_ROOT)/Libraries/CMSIS/inc" \
                  -I"$(PROJ_ROOT)/HAL/inc" \
-                 -I"$(PROJ_ROOT)/Libraries/cli/inc" \
                  -I"$(PROJ_ROOT)/Libraries/Power/inc" \
                  -I"$(PROJ_ROOT)/FreeRTOS/include" \
                  -I"$(PROJ_ROOT)/FreeRTOS/portable/GCC/ARM_CM4F_quicklogic_s3XX" \
@@ -89,7 +88,6 @@ export POWER_DIR        = $(LIB_DIR)$(DIR_SEP)Power$(DIR_SEP)src
 export SYSFLASH_DIR     = $(LIB_DIR)$(DIR_SEP)SysFlash$(DIR_SEP)src
 export UTILS_DIR        = $(LIB_DIR)$(DIR_SEP)Utils$(DIR_SEP)src
 export FPGA_DIR       		= $(LIB_DIR)$(DIR_SEP)FPGA$(DIR_SEP)src
-export CLI_DIR        		= $(LIB_DIR)$(DIR_SEP)cli$(DIR_SEP)src
 export MAIN_DIR       		= $(APP_DIR)$(DIR_SEP)src
 export MAIN_FPGA_RTL_DIR	= 
 export MAIN_FPGA_SRC_DIR	= $(APP_DIR)$(DIR_SEP)fpga

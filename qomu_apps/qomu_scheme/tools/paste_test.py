@@ -9,8 +9,8 @@ Prints Error and tests: lines, and any line of the form name=value, so a
 benchmark can report its numbers that way, e.g. bench.scm's fib20time=905.
 
 Run on the Pi with the terminal program closed:
-    python3 tools/paste_test.py tests.scm
-    python3 tools/paste_test.py bench.scm --idle 3
+    python3 tools/paste_test.py scm/tests.scm
+    python3 tools/paste_test.py scm/bench.scm --idle 3
 """
 import argparse, os, re, select, sys, termios, threading, time, tty
 

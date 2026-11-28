@@ -40,13 +40,11 @@
 #include "s3x_pi.h"
 #include "dbg_uart.h"
 
-#include "cli.h"
 
 #include "fpga_loader.h"    // API for loading FPGA
 extern const uint32_t axFPGABitStream[]; // FPGA bitstream (const: stays in the image, not copied to RAM)
 extern int      axFPGABitStream_length; // length of axFPGABitStream array in bytes
 
-extern const struct cli_cmd_entry my_main_menu[];
 extern void scheme_start_task(void);
 /* Pad setup for the open-toolchain bitstream (fpga/qomu_fpga_iomux.c, generated
  * by gateware/usb2serial/build.sh). Weak: absent with the SpDE bitstream. */

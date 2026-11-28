@@ -51,13 +51,6 @@ clean_HAL:
 
 CLEAN_TARGET += HAL
 
-.PHONY:CLI
-CLI:
-	make -f makefiles/Makefile_cli
-clean_CLI:
-	make -f makefiles/Makefile_cli clean
-
-CLEAN_TARGET += CLI
 
 FreeRTOS:
 	make -f makefiles/Makefile_FreeRTOS
